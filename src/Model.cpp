@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2023 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -22,11 +22,11 @@
  *
  *****************************************************************************/
 #include "Model.h"
-#include "Memory.h"
 
 #include <cassert>
 #include <cstring>
 
+#include "Memory.h"
 #include "Utils.h"
 
 namespace vsi {
@@ -35,13 +35,13 @@ namespace sl {
 
 int Model::AddOperand(const ANeuralNetworksOperandType& type) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
 
     if (type.dimensionCount) {  // implies tensor
         if (type.dimensions == nullptr) {
-            std::cout << "get an invalid operand" << std::endl;
+            std::cout << "Error: get an invalid operand" << std::endl;
             return ANEURALNETWORKS_BAD_DATA;
         }
         slang::type::tensor_storage tensor = {
@@ -54,7 +54,7 @@ int Model::AddOperand(const ANeuralNetworksOperandType& type) {
         tensors_.insert({operand_id_++, tensor});
     } else {  // implies scalar
         if (type.dimensions != nullptr) {
-            std::cout << "get an invalid operand" << std::endl;
+            std::cout << "Error: get an invalid operand" << std::endl;
             return ANEURALNETWORKS_BAD_DATA;
         }
         slang::type::scalar_storage scalar = {.dtype = MapDataType(type.type)};
@@ -66,22 +66,23 @@ int Model::AddOperand(const ANeuralNetworksOperandType& type) {
 int Model::SetOperandSymmPerChannelQuantParams(
         int32_t index, const ANeuralNetworksSymmPerChannelQuantParams& channelQuant) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
     if (index >= operand_id_) {
-        std::cout << "ANeuralNetworksModel_setOperandValue get an invalid index" << std::endl;
+        std::cout << "ANeuralNetworksModel_SetOperandSymmPerChannelQuantParams get an invalid index"
+                  << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
     if (tensors_.find(index) != tensors_.end()) {
         // reverse channel_dim axis
         uint32_t channel_dim = tensors_[index].shape.size() - channelQuant.channelDim - 1;
         tensors_[index].channel_dim = channel_dim;
-        tensors_[index].per_channel_scales.assign(
-                channelQuant.scales, channelQuant.scales + channelQuant.scaleCount);
+        tensors_[index].per_channel_scales.assign(channelQuant.scales,
+                                                  channelQuant.scales + channelQuant.scaleCount);
         tensors_[index].per_channel_zero_points.assign(channelQuant.scaleCount, 0);
     } else {
-        std::cout << "Invalid operand index." << std::endl;
+        std::cout << "Error: Invalid operand index." << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
     return ANEURALNETWORKS_NO_ERROR;
@@ -89,7 +90,7 @@ int Model::SetOperandSymmPerChannelQuantParams(
 
 int Model::SetOperandValue(uint32_t index, const void* buffer, size_t length) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
     if (index >= operand_id_) {
@@ -101,8 +102,10 @@ int Model::SetOperandValue(uint32_t index, const void* buffer, size_t length) {
                   << " exceeds max size" << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
-    if (buffer == nullptr) return ANEURALNETWORKS_BAD_DATA;
-
+    if (buffer == nullptr) {
+        std::cout << "Warning: This tensor is empty" << std::endl;
+        return ANEURALNETWORKS_NO_ERROR;
+    }
     if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
         const uint8_t* copied_values = reinterpret_cast<const uint8_t*>(buffer);
         constant_copy_.insert({index, std::vector<uint8_t>(copied_values, copied_values + length)});
@@ -127,15 +130,16 @@ int Model::SetOperandValue(uint32_t index, const void* buffer, size_t length) {
 int Model::SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t offset,
                                      size_t length) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
     if (index >= operand_id_) {
-        std::cout << "ANeuralNetworksModel_setOperandValue get an invalid index" << std::endl;
+        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get an invalid index"
+                  << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
     if (length > 0xFFFFFFFF) {
-        std::cout << "ANeuralNetworksModel_setOperandValue value length of " << length
+        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory value length of " << length
                   << " exceeds max size" << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
@@ -146,7 +150,8 @@ int Model::SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t
         tensors_[index].data = (uint8_t*)memory->Data() + offset;
         tensors_[index].data_length = length;
     } else {
-        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get an invalid index" << std::endl;
+        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get an invalid index"
+                  << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
     return ANEURALNETWORKS_NO_ERROR;
@@ -155,7 +160,7 @@ int Model::SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t
 int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                         const uint32_t* inputs, uint32_t outputCount, const uint32_t* outputs) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
     switch (type) {
@@ -169,6 +174,16 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_ARGMAX:
+            op_creators_.push_back(std::make_shared<ArgmaxCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_ARGMIN:
+            op_creators_.push_back(std::make_shared<ArgminCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_AVERAGE_POOL_2D:
             op_creators_.push_back(std::make_shared<AveragePool2DCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -176,6 +191,21 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_BATCH_TO_SPACE_ND:
             op_creators_.push_back(std::make_shared<BatchToSpaceCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_CAST:
+            op_creators_.push_back(std::make_shared<CastCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_CHANNEL_SHUFFLE:
+            op_creators_.push_back(std::make_shared<ChannelShuffleCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_CONCATENATION:
+            op_creators_.push_back(std::make_shared<ConcatenationCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -214,6 +244,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_EXPAND_DIMS:
+            op_creators_.push_back(std::make_shared<ExpandDimsCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_ELU:
             op_creators_.push_back(std::make_shared<EluCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -226,6 +261,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_FULLY_CONNECTED:
             op_creators_.push_back(std::make_shared<FullyConnectedCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_GATHER:
+            op_creators_.push_back(std::make_shared<GatherCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -249,6 +289,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_INSTANCE_NORMALIZATION:
+            op_creators_.push_back(std::make_shared<InstanceNormalizationCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_L2_NORMALIZATION:
             op_creators_.push_back(std::make_shared<L2NormalizationCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -266,6 +311,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_LOG:
             op_creators_.push_back(std::make_shared<LogCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_LOCAL_RESPONSE_NORMALIZATION:
+            op_creators_.push_back(std::make_shared<LocalResponseNormalizationCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -394,13 +444,28 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_RESIZE_BILINEAR:
+            op_creators_.push_back(std::make_shared<ResizeBilinearCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_RSQRT:
             op_creators_.push_back(std::make_shared<RsqrtCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_SELECT:
+            op_creators_.push_back(std::make_shared<SelectCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_SIN:
             op_creators_.push_back(std::make_shared<SinCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_SLICE:
+            op_creators_.push_back(std::make_shared<SliceCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -419,8 +484,18 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_SQUEEZE:
+            op_creators_.push_back(std::make_shared<SqueezeCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_SQRT:
             op_creators_.push_back(std::make_shared<SqrtCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_STRIDED_SLICE:
+            op_creators_.push_back(std::make_shared<StridedSliceCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -434,6 +509,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_TRANSPOSE:
+            op_creators_.push_back(std::make_shared<TransposeCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_TRANSPOSE_CONV_2D:
             op_creators_.push_back(std::make_shared<TransposeConv2DCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -443,13 +523,17 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             std::cout << "operation is not supported" << std::endl;
             return ANEURALNETWORKS_BAD_DATA;
     }
+    auto op = op_creators_.back();
+    if (op->support_state_ == false) {
+        return ANEURALNETWORKS_BAD_DATA;
+    }
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int Model::IdentifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs,
                                     uint32_t outputCount, const uint32_t* outputs) {
     if (finished_) {
-        std::cout << "can not modify a finished model." << std::endl;
+        std::cout << "Error: can not modify a finished model." << std::endl;
         return ANEURALNETWORKS_BAD_STATE;
     }
     inputs_ = std::vector<uint32_t>(inputs, inputs + inputCount);

@@ -1,10 +1,10 @@
 <mxfile host="65bd71144e">
     <diagram id="gI-_kocdYgFw-EdcWEpx" name="draft">
-        <mxGraphModel dx="3028" dy="1196" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="1384" dy="792" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="45" value="watermark" parent="0"/>
-                <mxCell id="46" value="draft" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=120;labelBorderColor=none;labelBackgroundColor=none;fontColor=#FF9999;textOpacity=60;" vertex="1" parent="45">
+                <mxCell id="46" value="draft" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=120;labelBorderColor=none;labelBackgroundColor=none;fontColor=#FF9999;textOpacity=60;" parent="45" vertex="1">
                     <mxGeometry x="140" y="160" width="520" height="530" as="geometry"/>
                 </mxCell>
                 <mxCell id="1" value="design" parent="0"/>
@@ -90,11 +90,8 @@
                 <mxCell id="33" value="TIM-VX" style="text;html=1;resizable=0;autosize=1;align=center;verticalAlign=middle;points=[];fillColor=none;strokeColor=none;rounded=0;" parent="1" vertex="1">
                     <mxGeometry x="650" y="30" width="60" height="20" as="geometry"/>
                 </mxCell>
-                <mxCell id="34" value="&lt;div style=&quot;color: rgb(212 , 212 , 212) ; background-color: rgb(30 , 30 , 30) ; font-family: &amp;#34;consolas&amp;#34; , &amp;#34;courier new&amp;#34; , monospace ; font-size: 16px ; line-height: 22px&quot;&gt;&lt;div style=&quot;font-family: &amp;#34;consolas&amp;#34; , &amp;#34;courier new&amp;#34; , monospace ; line-height: 22px&quot;&gt;&lt;span style=&quot;color: #4ec9b0&quot;&gt;tim::vx::platform::IExecutor&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;" style="whiteSpace=wrap;html=1;" parent="1" vertex="1">
-                    <mxGeometry x="555" y="570" width="250" height="50" as="geometry"/>
-                </mxCell>
-                <mxCell id="36" value="TO DO" style="text;html=1;resizable=0;autosize=1;align=center;verticalAlign=middle;points=[];fillColor=none;strokeColor=none;rounded=0;" parent="1" vertex="1">
-                    <mxGeometry x="655" y="630" width="50" height="20" as="geometry"/>
+                <mxCell id="34" value="&lt;div style=&quot;color: rgb(212 , 212 , 212) ; background-color: rgb(30 , 30 , 30) ; font-family: &amp;quot;consolas&amp;quot; , &amp;quot;courier new&amp;quot; , monospace ; font-size: 16px ; line-height: 22px&quot;&gt;&lt;div style=&quot;font-family: &amp;quot;consolas&amp;quot; , &amp;quot;courier new&amp;quot; , monospace ; line-height: 22px&quot;&gt;&lt;span style=&quot;color: #4ec9b0&quot;&gt;tim::vx::platform::IExecutable&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;" style="whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="555" y="570" width="265" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="37" value="&lt;div style=&quot;color: rgb(212 , 212 , 212) ; background-color: rgb(30 , 30 , 30) ; font-family: &amp;#34;consolas&amp;#34; , &amp;#34;courier new&amp;#34; , monospace ; font-size: 16px ; line-height: 22px&quot;&gt;&lt;div style=&quot;font-family: &amp;#34;consolas&amp;#34; , &amp;#34;courier new&amp;#34; , monospace ; line-height: 22px&quot;&gt;&lt;span style=&quot;color: #4ec9b0&quot;&gt;Slang&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;" style="whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="340" y="280" width="100" height="50" as="geometry"/>

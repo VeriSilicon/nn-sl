@@ -1,4 +1,4 @@
-#    copyright (c) 2023 Vivante Corporation
+#    Copyright (c) 2023 Vivante Corporation
 #
 #    Permission is hereby granted, free of charge, to any person obtaining a
 #    copy of this software and associated documentation files (the "Software"),
@@ -18,22 +18,42 @@
 #    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #    DEALINGS IN THE SOFTWARE
 #
-set( repo_addr git@github.com:VeriSilicon/TIM-VX.git)
+set( repo_addr https://github.com/VeriSilicon/TIM-VX.git)
 if(NOT PUBLIC_TIM_VX)
     set(repo_addr git@gitlab-cn.verisilicon.com:npu_sw/verisilicon/tim-vx.git)
 endif()
 
 message(STATUS "use TIM_VX from ${repo_addr}")
-
-ExternalProject_Add(tim-vx
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/deps/tim-vx
-    GIT_REPOSITORY ${repo_addr}
-    GIT_TAG main
-    CMAKE_ARGS
-        "-DTIM_VX_ENABLE_PLATFORM=ON"
-        "-DEXTERNAL_VIV_SDK=${CMAKE_SOURCE_DIR}/prebuilt/android_arm64"
-        "-DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/"
-        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
-        "-DANDROID_ABI=${ANDROID_ABI}"
-        "-DTIM_VX_DBG_ENABLE_TENSOR_HNDL=OFF"
-)
+if(USE_GRPC)
+    ExternalProject_Add(tim-vx
+        SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/deps/tim-vx
+        GIT_REPOSITORY ${repo_addr}
+        GIT_TAG main
+        CMAKE_ARGS
+            "-DTIM_VX_ENABLE_PLATFORM=ON"
+            "-DEXTERNAL_VIV_SDK=${CMAKE_SOURCE_DIR}/prebuilt/android_arm64"
+            "-DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/"
+            "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
+            "-DANDROID_ABI=${ANDROID_ABI}"
+            "-DTIM_VX_DBG_ENABLE_TENSOR_HNDL=OFF"
+            "-DTIM_VX_ENABLE_GRPC=ON"
+            "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+            "-DProtobuf_DIR=${Protobuf_DIR}"
+            "-DgRPC_DIR=${gRPC_DIR}"
+            "-Dabsl_DIR=${absl_DIR}"
+    )
+else()
+    ExternalProject_Add(tim-vx
+        SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/deps/tim-vx
+        GIT_REPOSITORY ${repo_addr}
+        GIT_TAG main
+        CMAKE_ARGS
+            "-DTIM_VX_ENABLE_PLATFORM=ON"
+            "-DEXTERNAL_VIV_SDK=${CMAKE_SOURCE_DIR}/prebuilt/android_arm64"
+            "-DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/"
+            "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
+            "-DANDROID_ABI=${ANDROID_ABI}"
+            "-DTIM_VX_DBG_ENABLE_TENSOR_HNDL=OFF"
+            "-DTIM_VX_ENABLE_TENSOR_CACHE=OFF"
+    )
+endif()
