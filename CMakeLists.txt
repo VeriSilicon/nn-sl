@@ -3,10 +3,16 @@ cmake_minimum_required(VERSION 3.20)
 option(SL_DIST_BUILD "Build from distributed package"   ON)
 option(PUBLIC_TIM_VX "Download TIM_VX from github"      ON)
 option(RUN_NBG       "Turn on NBG feature"              ON)
+option(USE_GRPC      "Use gRPC support, work with NBG"  OFF)
 
 if(${RUN_NBG})
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DRUN_NBG")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRUN_NBG")
+endif()
+
+if(${USE_GRPC})
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_GRPC")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_GRPC")
 endif()
 
 if(${CMAKE_BUILD_TYPE})
@@ -20,7 +26,7 @@ project(
     ${project_name}
     )
 
-list( APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/module")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/module")
 
 if(NOT SL_DIST_BUILD)
     include(VersionFromGit)
@@ -51,7 +57,7 @@ add_library(VsiSupportLibrary SHARED ${SRC})
 target_link_libraries(VsiSupportLibrary ${DEPENDENCIES})
 target_include_directories(VsiSupportLibrary
     PRIVATE
-        ${CMAKE_CURRENT_BINARY_DIR}/deps/slang/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/deps/include
         ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/include
     )
 

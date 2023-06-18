@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2023 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -23,11 +23,16 @@
  *****************************************************************************/
 #ifndef VSI_ANDROID_SL_DEVICE_MANAGER_H
 #define VSI_ANDROID_SL_DEVICE_MANAGER_H
+#include <sys/system_properties.h>
+
 #include <memory>
+#include <cstdlib>
 
 #include "VsiDevice.h"
 #include "tim/vx/platform/native.h"
-
+#ifdef USE_GRPC
+#include "tim/vx/platform/grpc/grpc_remote.h"
+#endif
 namespace vsi {
 namespace android {
 namespace sl {
@@ -36,7 +41,15 @@ class DeviceManager {
     static DeviceManager* Instance() {
         if (instance_ == nullptr) {
             instance_ = new DeviceManager();
+#ifdef USE_GRPC
+            char env[32] = {0};
+            __system_property_get("vendor.VSI_ASL_PORT", env);
+            std::string port(env);
+            auto devices = tim::vx::platform::GRPCRemoteDevice::Enumerate(port);
+
+#else
             auto devices = tim::vx::platform::NativeDevice::Enumerate();
+#endif
             for (int i = 0; i < devices.size(); ++i) {
                 std::string name("vsi-device-" + std::to_string(i));
                 std::shared_ptr<VsiDevice> device = std::make_shared<VsiDevice>(devices[i], name);

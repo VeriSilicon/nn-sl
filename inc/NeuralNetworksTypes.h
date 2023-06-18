@@ -6375,36 +6375,34 @@ typedef struct ANeuralNetworksMemoryDesc ANeuralNetworksMemoryDesc;
  * Diagnostic data class.
  */
 typedef enum {
-  ANNDIAG_DATA_CLASS_UNKNOWN = 0,
-  ANNDIAG_DATA_CLASS_OTHER = 1,
-  ANNDIAG_DATA_CLASS_FLOAT32 = 2,
-  ANNDIAG_DATA_CLASS_FLOAT16 = 3,
-  ANNDIAG_DATA_CLASS_QUANT = 4,
-  ANNDIAG_DATA_CLASS_MIXED = 5
+    ANNDIAG_DATA_CLASS_UNKNOWN = 0,
+    ANNDIAG_DATA_CLASS_OTHER = 1,
+    ANNDIAG_DATA_CLASS_FLOAT32 = 2,
+    ANNDIAG_DATA_CLASS_FLOAT16 = 3,
+    ANNDIAG_DATA_CLASS_QUANT = 4,
+    ANNDIAG_DATA_CLASS_MIXED = 5
 } ANeuralNetworksDiagnosticDataClass;
 
 /**
  * Diagnostic execution mode.
  */
 typedef enum {
-  ANNDIAG_EXECUTION_MODE_UNKNOWN = 0,
-  ANNDIAG_EXECUTION_MODE_ASYNC = 1,
-  ANNDIAG_EXECUTION_MODE_SYNC = 2,
-  ANNDIAG_EXECUTION_MODE_BURST = 3,
-  ANNDIAG_EXECUTION_MODE_ASYNC_WITH_DEPS = 4,
+    ANNDIAG_EXECUTION_MODE_UNKNOWN = 0,
+    ANNDIAG_EXECUTION_MODE_ASYNC = 1,
+    ANNDIAG_EXECUTION_MODE_SYNC = 2,
+    ANNDIAG_EXECUTION_MODE_BURST = 3,
+    ANNDIAG_EXECUTION_MODE_ASYNC_WITH_DEPS = 4,
 } ANeuralNetworksDiagnosticExecutionMode;
 
-typedef struct ANeuralNetworksDiagnosticCompilationInfo
-    ANeuralNetworksDiagnosticCompilationInfo;
+typedef struct ANeuralNetworksDiagnosticCompilationInfo ANeuralNetworksDiagnosticCompilationInfo;
 
-typedef struct ANeuralNetworksDiagnosticExecutionInfo
-    ANeuralNetworksDiagnosticExecutionInfo;
+typedef struct ANeuralNetworksDiagnosticExecutionInfo ANeuralNetworksDiagnosticExecutionInfo;
 
 typedef void (*ANeuralNetworksDiagnosticCompilationFinishedCallback)(
-    const void* context, const ANeuralNetworksDiagnosticCompilationInfo* info);
+        const void* context, const ANeuralNetworksDiagnosticCompilationInfo* info);
 
 typedef void (*ANeuralNetworksDiagnosticExecutionFinishedCallback)(
-    const void* context, const ANeuralNetworksDiagnosticExecutionInfo* info);
+        const void* context, const ANeuralNetworksDiagnosticExecutionInfo* info);
 __END_DECLS
 
 #endif  // ANDROID_FRAMEWORKS_ML_NN_RUNTIME_NEURAL_NETWORKS_TYPES_H
