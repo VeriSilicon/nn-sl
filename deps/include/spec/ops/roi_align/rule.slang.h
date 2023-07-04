@@ -1,0 +1,7 @@
+START_DEFINE_RULES()
+
+#ifndef __ENABLE_HW_SPEC__
+
+ADD_RULE()
+
+#endif

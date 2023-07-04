@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -88,6 +88,9 @@ class Execution {
               std::map<std::shared_ptr<tim::vx::Tensor>, std::shared_ptr<tim::vx::Tensor>>>
             layout_infered_;
     bool reusable_;
+    // src_graph output order may be different from infer_graph
+    std::vector<uint32_t> output_order_;
+    std::vector<uint32_t> out_memory_order_;
 
 #ifdef RUN_NBG
     std::shared_ptr<tim::vx::platform::IExecutor> executor_;

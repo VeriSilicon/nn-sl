@@ -9,8 +9,11 @@
   namespace sname {
 
 #define DECLARE_TENSOR_PARAM(pname, mod) \
-  struct Role##pname;                    \
-  using pname =                          \
+  static constexpr char const * Role##pname##_asStr = #pname;          \
+  struct Role##pname {                                      \
+    static constexpr char const * doc = Role##pname##_asStr;   \
+  };                                                        \
+  using pname =                                             \
       slang::type::tensor_field<Role##pname, slang::type::modifier::k##mod>;
 
 #define DECLARE_SCALAR_PARAM(pname, mod) \

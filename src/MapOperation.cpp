@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -80,10 +80,12 @@ std::shared_ptr<tim::vx::Tensor> FuseActivation(std::shared_ptr<tim::vx::Graph> 
 }
 }  // namespace
 
-int MapActivation(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                  std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                  const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                  const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapOneInputOneOutput(std::shared_ptr<tim::vx::Graph> graph,
+                         std::shared_ptr<OpCreator> op_creator,
+                         std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                         const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                         const std::vector<uint32_t>& inputs,
+                         const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
     uint32_t idx_out = outputs[0];
 
@@ -97,55 +99,9 @@ int MapActivation(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreat
     auto input = vx_tensors[idx_in];
     auto output = vx_tensors[idx_out];
 
-    auto activation = op_creator->Lowering(graph);
-    activation->BindInput(input);
-    activation->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapArg(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-           const TensorMap& tensor_map, const ScalarMap& scalar_map,
-           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto arg = op_creator->Lowering(graph);
-    arg->BindInput(input);
-    arg->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapBatchToSpace(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto space_to_batch = op_creator->Lowering(graph);
-    space_to_batch->BindInput(input);
-    space_to_batch->BindOutput(output);
+    auto op = op_creator->Lowering(graph);
+    op->BindInput(input);
+    op->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -171,50 +127,6 @@ int MapConcatenation(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCr
     auto concatenation = op_creator->Lowering(graph);
     concatenation->BindInputs(timvx_inputs);
     concatenation->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapCast(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-            const TensorMap& tensor_map, const ScalarMap& scalar_map,
-            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto cast = op_creator->Lowering(graph);
-    cast->BindInput(input);
-    cast->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapChannelShuffle(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                      std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                      const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                      const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto channel_shuffle = op_creator->Lowering(graph);
-    channel_shuffle->BindInput(input);
-    channel_shuffle->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -276,30 +188,6 @@ int MapConv2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapDataConvert(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                   std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                   const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                   const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto quantize = op_creator->Lowering(graph);
-    quantize->BindInput(input);
-    quantize->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
 int MapDepthwiseConv2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                        std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                        const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -357,30 +245,6 @@ int MapDepthwiseConv2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<Op
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapDepthToSpace(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    uint32_t idx_act;
-    inputs.size() == 3 ? idx_act = inputs[2] : idx_act = inputs[1];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto depth_to_space = op_creator->Lowering(graph);
-    depth_to_space->BindInput(input);
-    depth_to_space->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
 int MapEltwise(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -416,50 +280,61 @@ int MapEltwise(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator>
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapEltwiseUnary(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapEltwiseWithNoAct(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+           const TensorMap& tensor_map, const ScalarMap& scalar_map,
+           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
+    uint32_t idx_in1 = inputs[1];
     uint32_t idx_out = outputs[0];
 
     if (!vx_tensors.count(idx_in)) {
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
     }
+    if (!vx_tensors.count(idx_in1)) {
+        vx_tensors.insert({idx_in1, CreateTvxTensor(graph, tensor_map.at(idx_in1))});
+    }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
+    }
     auto input = vx_tensors[idx_in];
+    auto input1 = vx_tensors[idx_in1];
     auto output = vx_tensors[idx_out];
 
-    auto simple_op = op_creator->Lowering(graph);
-    simple_op->BindInput(input);
-    simple_op->BindOutput(output);
+    auto eltwise_with_no_act = op_creator->Lowering(graph);
+    eltwise_with_no_act->BindInput(input);
+    eltwise_with_no_act->BindInput(input1);
+    eltwise_with_no_act->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapExpandDims(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                  std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                  const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                  const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
+int MapEmbeddingLookup(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+                       std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                       const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                       const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+    uint32_t idx_lookups = inputs[0];
+    uint32_t idx_values = inputs[1];
     uint32_t idx_out = outputs[0];
 
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
+    if (!vx_tensors.count(idx_lookups)) {
+        vx_tensors.insert({idx_lookups, CreateTvxTensor(graph, tensor_map.at(idx_lookups))});
+    }
+    if (!vx_tensors.count(idx_values)) {
+        vx_tensors.insert({idx_values, CreateTvxTensor(graph, tensor_map.at(idx_values))});
     }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
     }  // If not graph input/output, create const or transient tensor
 
-    auto input = vx_tensors[idx_in];
+    auto lookups = vx_tensors[idx_lookups];
+    auto values = vx_tensors[idx_values];
     auto output = vx_tensors[idx_out];
 
-    auto expand_dims = op_creator->Lowering(graph);
-    expand_dims->BindInput(input);
-    expand_dims->BindOutput(output);
+    auto embedding_lookup = op_creator->Lowering(graph);
+    embedding_lookup->BindInput(lookups);
+    embedding_lookup->BindInput(values);
+    embedding_lookup->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -642,51 +517,43 @@ int MapInstanceNormalization(
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapL2Normalization(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                       std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                       const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                       const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto l2_normalization = op_creator->Lowering(graph);
-    l2_normalization->BindInput(input);
-    l2_normalization->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapLocalResponseNormalization(
+int MapHashtableLookup(
         std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
         std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
         const TensorMap& tensor_map, const ScalarMap& scalar_map,
         const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
+    uint32_t idx_lookups = inputs[0];
+    uint32_t idx_keys = inputs[1];
+    uint32_t idx_values = inputs[2];
     uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
+    uint32_t idx_hits = outputs[1];
+    if (!vx_tensors.count(idx_lookups)) {
+        vx_tensors.insert({idx_lookups, CreateTvxTensor(graph, tensor_map.at(idx_lookups))});
+    }
+    if (!vx_tensors.count(idx_keys)) {
+        vx_tensors.insert({idx_keys, CreateTvxTensor(graph, tensor_map.at(idx_keys))});
+    }
+    if (!vx_tensors.count(idx_values)) {
+        vx_tensors.insert({idx_values, CreateTvxTensor(graph, tensor_map.at(idx_values))});
     }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
+    }
+    if (!vx_tensors.count(idx_hits)) {
+        vx_tensors.insert({idx_hits, CreateTvxTensor(graph, tensor_map.at(idx_hits))});
     }  // If not graph input/output, create const or transient tensor
 
-    auto input = vx_tensors[idx_in];
+    auto lookups = vx_tensors[idx_lookups];
+    auto keys = vx_tensors[idx_keys];
+    auto values = vx_tensors[idx_values];
     auto output = vx_tensors[idx_out];
-
-    auto local_response_normalization = op_creator->Lowering(graph);
-    local_response_normalization->BindInput(input);
-    local_response_normalization->BindOutput(output);
+    auto hits = vx_tensors[idx_hits];
+    auto hashtable_lookup = op_creator->Lowering(graph);
+    hashtable_lookup->BindInput(lookups);
+    hashtable_lookup->BindInput(keys);
+    hashtable_lookup->BindInput(values);
+    hashtable_lookup->BindOutput(output);
+    hashtable_lookup->BindOutput(hits);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -721,102 +588,6 @@ int MapLogicalAndOr(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapLogcialNot(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                  std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                  const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                  const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto simple_op = op_creator->Lowering(graph);
-    simple_op->BindInput(input);
-    simple_op->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapMean(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-            const TensorMap& tensor_map, const ScalarMap& scalar_map,
-            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto mean = op_creator->Lowering(graph);
-    mean->BindInput(input);
-    mean->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapPad(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-           const TensorMap& tensor_map, const ScalarMap& scalar_map,
-           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto pad = op_creator->Lowering(graph);
-    pad->BindInput(input);
-    pad->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapPadV2(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-             std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-             const TensorMap& tensor_map, const ScalarMap& scalar_map,
-             const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto pad2 = op_creator->Lowering(graph);
-    pad2->BindInput(input);
-    pad2->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
 int MapPool2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
               const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -841,35 +612,6 @@ int MapPool2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> 
     auto pool2d = op_creator->Lowering(graph);
     pool2d->BindInput(input);
     pool2d->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapPow(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-           const TensorMap& tensor_map, const ScalarMap& scalar_map,
-           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_in1 = inputs[1];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_in1)) {
-        vx_tensors.insert({idx_in1, CreateTvxTensor(graph, tensor_map.at(idx_in1))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto input1 = vx_tensors[idx_in1];
-    auto output = vx_tensors[idx_out];
-
-    auto pow = op_creator->Lowering(graph);
-    pow->BindInput(input);
-    pow->BindInput(input1);
-    pow->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -904,30 +646,6 @@ int MapPrelu(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> o
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapReduce(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-              std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-              const TensorMap& tensor_map, const ScalarMap& scalar_map,
-              const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto reduce = op_creator->Lowering(graph);
-    reduce->BindInput(input);
-    reduce->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
 int MapRelationalOp(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                     std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                     const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -958,50 +676,39 @@ int MapRelationalOp(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapReshape(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map,
-               const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapRoiAlign(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
+    uint32_t idx_regions = inputs[1];
+    uint32_t idx_batch_index = inputs[2];
     uint32_t idx_out = outputs[0];
 
     if (!vx_tensors.count(idx_in)) {
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
+    }
+    if (!vx_tensors.count(idx_regions)) {
+        vx_tensors.insert({idx_regions, CreateTvxTensor(graph, tensor_map.at(idx_regions))});
+    }
+    if (!vx_tensors.count(idx_batch_index)) {
+        vx_tensors.insert({idx_batch_index, CreateTvxTensor(graph, tensor_map.at(idx_batch_index))});
     }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
     }  // If not graph input/output, create const or transient tensor
 
     auto input = vx_tensors[idx_in];
+    auto regions = vx_tensors[idx_regions];
+    auto batch_index = vx_tensors[idx_batch_index];
     auto output = vx_tensors[idx_out];
-
-    auto reshape = op_creator->Lowering(graph);
-    reshape->BindInput(input);
-    reshape->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapResizeBilinear(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                      std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                      const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                      const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto resize_bilinear = op_creator->Lowering(graph);
-    resize_bilinear->BindInput(input);
-    resize_bilinear->BindOutput(output);
+//     FUNC_LINE;
+// PrintVXSpec(batch_index->GetSpec());
+    auto roi_align = op_creator->Lowering(graph);
+    roi_align->BindInput(input);
+    roi_align->BindInput(regions);
+    roi_align->BindInput(batch_index);
+    roi_align->BindOutput(output);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -1042,162 +749,129 @@ int MapSelect(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapSlice(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+int MapSplit(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
              std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
              const TensorMap& tensor_map, const ScalarMap& scalar_map,
              const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
+    uint32_t idx_num_splits = inputs[2];
+    std::vector<std::shared_ptr<tim::vx::Tensor>> outputs_tensors;
+    auto p_num_splits = scalar_map.at(idx_num_splits).data.data();
+    int num_splits = *(int32_t*)p_num_splits;
     if (!vx_tensors.count(idx_in)) {
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
     }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
+    for (int i = 0; i < num_splits; ++i) {
+        uint32_t idx_out = outputs[i];
+        if (!vx_tensors.count(idx_out)) {
+            vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
+        }
+        outputs_tensors.push_back(vx_tensors[idx_out]);
+    }
 
     auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
 
-    auto slice = op_creator->Lowering(graph);
-    slice->BindInput(input);
-    slice->BindOutput(output);
+    auto split = op_creator->Lowering(graph);
+    split->BindInput(input);
+    split->BindOutputs(outputs_tensors);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapSoftmax(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map,
-               const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapSvdf(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+            const TensorMap& tensor_map, const ScalarMap& scalar_map,
+            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-
+    uint32_t idx_weights_feature = inputs[1];
+    uint32_t idx_weights_time = inputs[2];
+    uint32_t idx_state_out = outputs[0];
+    uint32_t idx_out = outputs[1];
+    uint32_t idx_bias, idx_state_in, idx_act;
+    int32_t fuse_code = 0;
+    std::shared_ptr<tim::vx::Tensor> bias;
+    if (tensor_map.at(inputs[3]).shape.size() == 1) {
+        idx_bias = inputs[3];
+        idx_state_in = inputs[4];
+        if (!vx_tensors.count(idx_bias)) {
+            vx_tensors.insert({idx_bias, CreateTvxTensor(graph, tensor_map.at(idx_bias))});
+        }
+        bias = vx_tensors[idx_bias];
+        if (inputs.size() == 7) {
+            idx_act = inputs.back();
+            auto p_act = scalar_map.at(idx_act).data.data();
+            fuse_code = *(int32_t*)p_act;
+        }
+    } else {
+        idx_state_in = inputs[3];
+        if (inputs.size() == 6) {
+            idx_act = inputs.back();
+            auto p_act = scalar_map.at(idx_act).data.data();
+            fuse_code = *(int32_t*)p_act;
+        }
+    }
     if (!vx_tensors.count(idx_in)) {
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
     }
+    if (!vx_tensors.count(idx_weights_feature)) {
+        vx_tensors.insert({idx_weights_feature, CreateTvxTensor(graph, tensor_map.at(idx_weights_feature))});
+    }
+    if (!vx_tensors.count(idx_weights_time)) {
+        vx_tensors.insert({idx_weights_time, CreateTvxTensor(graph, tensor_map.at(idx_weights_time))});
+    }
+    if (!vx_tensors.count(idx_state_in)) {
+        vx_tensors.insert({idx_state_in, CreateTvxTensor(graph, tensor_map.at(idx_state_in))});
+    }
+    if (!vx_tensors.count(idx_state_out)) {
+        vx_tensors.insert({idx_state_out, CreateTvxTensor(graph, tensor_map.at(idx_state_out))});
+    }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }  // If not graph input/output, create const or transient tensor
-
+    }
     auto input = vx_tensors[idx_in];
+    auto weights_feature = vx_tensors[idx_weights_feature];
+    auto weights_time = vx_tensors[idx_weights_time];
+    auto state_in = vx_tensors[idx_state_in];
+    auto state_out = vx_tensors[idx_state_out];
     auto output = vx_tensors[idx_out];
 
-    auto softmax = op_creator->Lowering(graph);
-    softmax->BindInput(input);
-    softmax->BindOutput(output);
-
+    auto svdf = op_creator->Lowering(graph);
+    svdf->BindInput(input);
+    svdf->BindInput(state_in);
+    svdf->BindInput(weights_feature);
+    svdf->BindInput(weights_time);
+    if (tensor_map.at(inputs[3]).shape.size() == 1) {
+        svdf->BindInput(bias);
+    }
+    svdf->BindOutput(output);
+    svdf->BindOutput(state_out);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapSpaceToDepth(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapTopK(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+            const TensorMap& tensor_map, const ScalarMap& scalar_map,
+            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
     uint32_t idx_out = outputs[0];
-    uint32_t idx_act;
-    inputs.size() == 3 ? idx_act = inputs[2] : idx_act = inputs[1];
+    uint32_t idx_indices = outputs[1];
     if (!vx_tensors.count(idx_in)) {
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
     }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
     }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto space_to_depth = op_creator->Lowering(graph);
-    space_to_depth->BindInput(input);
-    space_to_depth->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapSpaceToBatch(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
+    if (!vx_tensors.count(idx_indices)) {
+        vx_tensors.insert({idx_indices, CreateTvxTensor(graph, tensor_map.at(idx_indices))});
     }
     auto input = vx_tensors[idx_in];
     auto output = vx_tensors[idx_out];
+    auto indices = vx_tensors[idx_indices];
 
-    auto space_to_batch = op_creator->Lowering(graph);
-    space_to_batch->BindInput(input);
-    space_to_batch->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapSqueeze(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map,
-               const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto squeeze = op_creator->Lowering(graph);
-    squeeze->BindInput(input);
-    squeeze->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapStridedSlice(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto strided_slice = op_creator->Lowering(graph);
-    strided_slice->BindInput(input);
-    strided_slice->BindOutput(output);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int MapTranspose(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                 std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                 const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                 const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
-    uint32_t idx_in = inputs[0];
-    uint32_t idx_out = outputs[0];
-    if (!vx_tensors.count(idx_in)) {
-        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
-    }
-    if (!vx_tensors.count(idx_out)) {
-        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
-    }
-    auto input = vx_tensors[idx_in];
-    auto output = vx_tensors[idx_out];
-
-    auto transpose = op_creator->Lowering(graph);
-    transpose->BindInput(input);
-    transpose->BindOutput(output);
+    auto top_k = op_creator->Lowering(graph);
+    top_k->BindInput(input);
+    top_k->BindOutput(output);
+    top_k->BindOutput(indices);
 
     return ANEURALNETWORKS_NO_ERROR;
 }

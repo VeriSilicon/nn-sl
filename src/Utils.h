@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -33,7 +33,7 @@ namespace android {
 namespace sl {
 
 #define FUNC_LINE                                                                        \
-    std::cout << "+++++++++++" << __func__ << "+++++++++++" << __LINE__ << "+++++++++++" \
+    std::cout << "++++++++++++++" << __func__ << "++++++++++++++" << __LINE__ << "++++++++++++++" \
               << std::endl
 
 tim::vx::DataType ToTvxDataType(slang::type::data_type type);

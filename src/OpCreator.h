@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -34,7 +34,6 @@
 #include "spec/ops/activation/spec.h"
 #include "spec/ops/arg/spec.h"
 #include "spec/ops/batch_to_space/spec.h"
-#include "spec/ops/cast/spec.h"
 #include "spec/ops/channel_shuffle/spec.h"
 #include "spec/ops/concatenation/spec.h"
 #include "spec/ops/conv2d/spec.h"
@@ -42,15 +41,16 @@
 #include "spec/ops/depthwise_conv2d/spec.h"
 #include "spec/ops/dequantize/spec.h"
 #include "spec/ops/eltwise/spec.h"
-#include "spec/ops/eltwise_unary/spec.h"
+#include "spec/ops/embedding_lookup/spec.h"
 #include "spec/ops/expand_dims/spec.h"
-#include "spec/ops/floor/spec.h"
 #include "spec/ops/fully_connected/spec.h"
 #include "spec/ops/gather/spec.h"
 #include "spec/ops/grouped_conv2d/spec.h"
+#include "spec/ops/hashtable_lookup/spec.h"
 #include "spec/ops/instance_normalization/spec.h"
 #include "spec/ops/l2_normalization/spec.h"
 #include "spec/ops/local_response_normalization/spec.h"
+#include "spec/ops/log_softmax/spec.h"
 #include "spec/ops/logical_and_or/spec.h"
 #include "spec/ops/logical_not/spec.h"
 #include "spec/ops/mean/spec.h"
@@ -59,20 +59,24 @@
 #include "spec/ops/pool2d/spec.h"
 #include "spec/ops/pow/spec.h"
 #include "spec/ops/prelu/spec.h"
-#include "spec/ops/quantize/spec.h"
 #include "spec/ops/reduce_all_any/spec.h"
 #include "spec/ops/reduce_max_min_prod_sum/spec.h"
 #include "spec/ops/relational_op/spec.h"
 #include "spec/ops/reshape/spec.h"
-#include "spec/ops/resize_bilinear/spec.h"
-#include "spec/ops/rsqrt/spec.h"
+#include "spec/ops/resize/spec.h"
+#include "spec/ops/roi_align/spec.h"
 #include "spec/ops/select/spec.h"
+#include "spec/ops/simple_op/spec.h"
 #include "spec/ops/slice/spec.h"
 #include "spec/ops/softmax/spec.h"
 #include "spec/ops/space_to_batch/spec.h"
 #include "spec/ops/space_to_depth/spec.h"
+#include "spec/ops/split/spec.h"
 #include "spec/ops/squeeze/spec.h"
 #include "spec/ops/strided_slice/spec.h"
+#include "spec/ops/svdf/spec.h"
+#include "spec/ops/tile/spec.h"
+#include "spec/ops/topk/spec.h"
 #include "spec/ops/transpose/spec.h"
 #include "spec/ops/transpose_conv2d/spec.h"
 #include "tim/vx/graph.h"
@@ -155,8 +159,8 @@ class AbsCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::eltwise_unary::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::eltwise_unary::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -165,7 +169,7 @@ class AbsCreator : public OpCreator {
     }
 
    private:
-    op::eltwise_unary::signature signature;
+    op::simple_op::signature signature;
 };
 
 class AddCreator : public OpCreator {
@@ -201,7 +205,7 @@ class AddCreator : public OpCreator {
 class ArgmaxCreator : public OpCreator {
    public:
     ArgmaxCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                  const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 2 || outputs.size() != 1) {
             std::cout << "Error: Argmax gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -236,7 +240,7 @@ class ArgmaxCreator : public OpCreator {
 class ArgminCreator : public OpCreator {
    public:
     ArgminCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                  const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 2 || outputs.size() != 1) {
             std::cout << "Error: Argmin gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -480,7 +484,7 @@ class ConcatenationCreator : public OpCreator {
 class CastCreator : public OpCreator {
    public:
     CastCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-                         const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 1 && outputs.size() != 1) {
             std::cout << "Cast gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -491,8 +495,8 @@ class CastCreator : public OpCreator {
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
 
-        std::get<0>(signature.field_tuple) = op::cast::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::cast::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -501,13 +505,13 @@ class CastCreator : public OpCreator {
     }
 
    private:
-    op::cast::signature signature;
+    op::simple_op::signature signature;
 };
 
 class ChannelShuffleCreator : public OpCreator {
    public:
     ChannelShuffleCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-                         const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                          const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 3 && outputs.size() != 1) {
             std::cout << "ChannelShuffle gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -857,8 +861,8 @@ class DequantizeCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::dequantize::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::dequantize::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -867,7 +871,7 @@ class DequantizeCreator : public OpCreator {
     }
 
    private:
-    op::dequantize::signature signature;
+    op::simple_op::signature signature;
 };
 
 class DivCreator : public OpCreator {
@@ -900,6 +904,37 @@ class DivCreator : public OpCreator {
     op::eltwise::signature signature;
 };
 
+class EmbeddingLookupCreator : public OpCreator {
+   public:
+    EmbeddingLookupCreator(const std::vector<uint32_t>& inputs,
+                           const std::vector<uint32_t>& outputs, const TensorMap& tensor_map,
+                           const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 1) {
+            std::cout << "Error: EmbeddingLookup gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_EMBEDDING_LOOKUP;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_lookups = inputs[0];
+        uint32_t idx_values = inputs[1];
+        uint32_t idx_out = outputs[0];
+        std::get<0>(signature.field_tuple) =
+                op::embedding_lookup::Lookups(tensor_map.at(idx_lookups));
+        std::get<1>(signature.field_tuple) =
+                op::embedding_lookup::Values(tensor_map.at(idx_values));
+        std::get<2>(signature.field_tuple) = op::embedding_lookup::Output(tensor_map.at(idx_out));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        return graph->CreateOperation<tim::vx::ops::EmbeddingLookup>();
+    }
+
+   private:
+    op::embedding_lookup::signature signature;
+};
+
 class EluCreator : public OpCreator {
    public:
     EluCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -916,8 +951,7 @@ class EluCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(scalar_map.at(idx_alpha));  // Placeholder for OPTIONAL param
+        std::get<2>(signature.field_tuple) = op::activation::Alpha(scalar_map.at(idx_alpha));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -977,8 +1011,8 @@ class ExpCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::eltwise_unary::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::eltwise_unary::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -987,13 +1021,13 @@ class ExpCreator : public OpCreator {
     }
 
    private:
-    op::eltwise_unary::signature signature;
+    op::simple_op::signature signature;
 };
 
 class ExpandDimsCreator : public OpCreator {
    public:
     ExpandDimsCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                      const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 2 || outputs.size() != 1) {
             std::cout << "Error: ExpandDims gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -1032,8 +1066,8 @@ class FloorCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::floor::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::floor::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1042,7 +1076,7 @@ class FloorCreator : public OpCreator {
     }
 
    private:
-    op::floor::signature signature;
+    op::simple_op::signature signature;
 };
 
 class FullyConnectedCreator : public OpCreator {
@@ -1084,7 +1118,7 @@ class FullyConnectedCreator : public OpCreator {
 class GatherCreator : public OpCreator {
    public:
     GatherCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-                          const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                  const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 3 || outputs.size() != 1) {
             std::cout << "Error: Gather gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -1248,8 +1282,7 @@ class GroupedConv2DCreator : public OpCreator {
         std::get<4>(signature.field_tuple) = op::grouped_conv2d::Stride(stride);
         std::get<5>(signature.field_tuple) = op::grouped_conv2d::Dilation(dilation);
         std::get<6>(signature.field_tuple) = op::grouped_conv2d::PadType(padding_code);
-        std::get<7>(signature.field_tuple) = op::grouped_conv2d::Pad(pad);  // construct
-                                                                            // scalar_feild
+        std::get<7>(signature.field_tuple) = op::grouped_conv2d::Pad(pad);
         std::get<8>(signature.field_tuple) = op::grouped_conv2d::Groups(scalar_map.at(idx_groups));
         std::get<9>(signature.field_tuple) = op::grouped_conv2d::Activation(scalar_map.at(idx_act));
         std::get<10>(signature.field_tuple) = op::grouped_conv2d::Layout(layout);
@@ -1283,6 +1316,41 @@ class GroupedConv2DCreator : public OpCreator {
     op::grouped_conv2d::signature signature;
 };
 
+class HashtableLookupCreator : public OpCreator {
+   public:
+    HashtableLookupCreator(const std::vector<uint32_t>& inputs,
+                           const std::vector<uint32_t>& outputs, const TensorMap& tensor_map,
+                           const ScalarMap& scalar_map) {
+        if (inputs.size() != 3 || outputs.size() != 2) {
+            std::cout << "Error: HashtableLookup gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_HASHTABLE_LOOKUP;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_lookups = inputs[0];
+        uint32_t idx_keys = inputs[1];
+        uint32_t idx_values = inputs[2];
+        uint32_t idx_out = outputs[0];
+        uint32_t idx_hits = outputs[1];
+        std::get<0>(signature.field_tuple) =
+                op::hashtable_lookup::Lookups(tensor_map.at(idx_lookups));
+        std::get<1>(signature.field_tuple) = op::hashtable_lookup::Keys(tensor_map.at(idx_keys));
+        std::get<2>(signature.field_tuple) =
+                op::hashtable_lookup::Values(tensor_map.at(idx_values));
+        std::get<3>(signature.field_tuple) = op::hashtable_lookup::Output(tensor_map.at(idx_out));
+        std::get<4>(signature.field_tuple) = op::hashtable_lookup::Hits(tensor_map.at(idx_hits));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        return graph->CreateOperation<tim::vx::ops::HashtableLookup>();
+    }
+
+   private:
+    op::hashtable_lookup::signature signature;
+};
+
 class HardSwishCreator : public OpCreator {
    public:
     HardSwishCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -1298,8 +1366,7 @@ class HardSwishCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
+        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1531,8 +1598,8 @@ class LogCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::eltwise_unary::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::eltwise_unary::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1541,7 +1608,7 @@ class LogCreator : public OpCreator {
     }
 
    private:
-    op::eltwise_unary::signature signature;
+    op::simple_op::signature signature;
 };
 
 class LogisticCreator : public OpCreator {
@@ -1559,8 +1626,7 @@ class LogisticCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
+        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1652,6 +1718,49 @@ class LogicalOrCreator : public OpCreator {
 
    private:
     op::logical_and_or::signature signature;
+};
+
+class LogSoftmaxCreator : public OpCreator {
+   public:
+    LogSoftmaxCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                      const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 3 || outputs.size() != 1) {
+            std::cout << "Error: LogSoftmax gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_LOG_SOFTMAX;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_beta = inputs[1];
+        uint32_t idx_axis = inputs[2];
+        uint32_t idx_out = outputs[0];
+
+        std::get<0>(signature.field_tuple) = op::log_softmax::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::log_softmax::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::log_softmax::Beta(scalar_map.at(idx_beta));
+        std::get<3>(signature.field_tuple) = op::log_softmax::Axis(scalar_map.at(idx_axis));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        const uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
+        auto datatype = std::get<2>(signature.field_tuple).storage.dtype;
+        const uint8_t* p_beta = std::get<2>(signature.field_tuple).storage.data.data();
+        const uint8_t* p_axis = std::get<3>(signature.field_tuple).storage.data.data();
+        int32_t axis_android = *(int32_t*)p_axis;
+        int32_t axis_vx = ConvertAxis(axis_android, rank);
+        if (datatype == slang::type::data_type::kFP16) {
+            auto beta = *(_Float16*)p_beta;
+            return graph->CreateOperation<tim::vx::ops::LogSoftmax>(axis_vx, beta);
+        } else {
+            auto beta = *(float*)p_beta;
+            return graph->CreateOperation<tim::vx::ops::LogSoftmax>(axis_vx, beta);
+        }
+    }
+
+   private:
+    op::log_softmax::signature signature;
 };
 
 class L2Pool2DCreator : public OpCreator {
@@ -1881,6 +1990,35 @@ class MaxPool2DCreator : public OpCreator {
     op::pool2d::signature signature;
 };
 
+class MaximumCreator : public OpCreator {
+   public:
+    MaximumCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 1) {
+            std::cout << "Error: Maximum gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_MAXIMUM;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_in1 = inputs[1];
+        uint32_t idx_out = outputs[0];
+        std::get<0>(signature.field_tuple) = op::eltwise::Input0(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::eltwise::Input1(tensor_map.at(idx_in1));
+        std::get<2>(signature.field_tuple) = op::eltwise::Output(tensor_map.at(idx_out));
+        std::get<3>(signature.field_tuple) = op::eltwise::Activation(0);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        return graph->CreateOperation<tim::vx::ops::Maximum>();
+    }
+
+   private:
+    op::eltwise::signature signature;
+};
+
 class MeanCreator : public OpCreator {
    public:
     MeanCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -1931,6 +2069,35 @@ class MeanCreator : public OpCreator {
     op::mean::signature signature;
 };
 
+class MinimumCreator : public OpCreator {
+   public:
+    MinimumCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 1) {
+            std::cout << "Error: Minimum gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_MINIMUM;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_in1 = inputs[1];
+        uint32_t idx_out = outputs[0];
+        std::get<0>(signature.field_tuple) = op::eltwise::Input0(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::eltwise::Input1(tensor_map.at(idx_in1));
+        std::get<2>(signature.field_tuple) = op::eltwise::Output(tensor_map.at(idx_out));
+        std::get<3>(signature.field_tuple) = op::eltwise::Activation(0);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        return graph->CreateOperation<tim::vx::ops::Minimum>();
+    }
+
+   private:
+    op::eltwise::signature signature;
+};
+
 class MulCreator : public OpCreator {
    public:
     MulCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -1974,8 +2141,8 @@ class NegCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::eltwise_unary::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::eltwise_unary::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1984,7 +2151,7 @@ class NegCreator : public OpCreator {
     }
 
    private:
-    op::eltwise_unary::signature signature;
+    op::simple_op::signature signature;
 };
 
 class NotEqualCreator : public OpCreator {
@@ -2147,9 +2314,10 @@ class PowCreator : public OpCreator {
         uint32_t idx_in = inputs[0];
         uint32_t idx_in1 = inputs[1];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::pow::Input0(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::pow::Input1(tensor_map.at(idx_in1));
-        std::get<2>(signature.field_tuple) = op::pow::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::eltwise::Input0(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::eltwise::Input1(tensor_map.at(idx_in1));
+        std::get<2>(signature.field_tuple) = op::eltwise::Output(tensor_map.at(idx_out));
+        std::get<3>(signature.field_tuple) = op::eltwise::Activation(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2158,7 +2326,7 @@ class PowCreator : public OpCreator {
     }
 
    private:
-    op::pow::signature signature;
+    op::eltwise::signature signature;
 };
 
 class PreluCreator : public OpCreator {
@@ -2208,8 +2376,8 @@ class QuantizeCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::quantize::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::quantize::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2218,7 +2386,7 @@ class QuantizeCreator : public OpCreator {
     }
 
    private:
-    op::quantize::signature signature;
+    op::simple_op::signature signature;
 };
 
 class ReduceAllCreator : public OpCreator {
@@ -2568,8 +2736,7 @@ class Relu1Creator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
+        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2596,8 +2763,7 @@ class Relu6Creator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
+        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2691,20 +2857,24 @@ class ResizeBilinearCreator : public OpCreator {
         int output_width = 0, output_height = 0;
         float factor_width = 0, factor_height = 0;
         if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kINT32) {
-            std::get<4>(signature.field_tuple) = op::resize_bilinear::Factor(0);
+            std::get<4>(signature.field_tuple) = op::resize::Factor(0);
             auto* p_output_width = scalar_map.at(inputs[1]).data.data();
             auto* p_output_height = scalar_map.at(inputs[2]).data.data();
             output_width = *(int32_t*)p_output_width;
             output_height = *(int32_t*)p_output_height;
         } else {
-            std::get<4>(signature.field_tuple) =
-                    op::resize_bilinear::Factor(scalar_map.at(inputs[1]));
+            std::get<4>(signature.field_tuple) = op::resize::Factor(scalar_map.at(inputs[1]));
             auto* p_factor_width = scalar_map.at(inputs[1]).data.data();
             auto* p_factor_height = scalar_map.at(inputs[2]).data.data();
-            factor_width = *(float*)p_factor_width;
-            factor_height = *(float*)p_factor_height;
-            if (factor_width - factor_height > 1e-5f) {
-                std::cout << "Error: factor_width not equal to output_height isn't supported in "
+            if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kFP16) {
+                factor_width = *(_Float16*)p_factor_width;
+                factor_height = *(_Float16*)p_factor_height;
+            } else {
+                factor_width = *(float*)p_factor_width;
+                factor_height = *(float*)p_factor_height;
+            }
+            if (abs(factor_width - factor_height) > 1e-5f) {
+                std::cout << "Error: factor_width not equal to factor_height isn't supported in "
                              "ResizeBilinear"
                           << std::endl;
                 support_state_ = false;
@@ -2723,14 +2893,13 @@ class ResizeBilinearCreator : public OpCreator {
             align_corners = *(bool*)p_align_corners;
             half_pixel_centers = *(bool*)p_half_pixel_centers;
         }
-        std::get<0>(signature.field_tuple) = op::resize_bilinear::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::resize_bilinear::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::resize_bilinear::Output_width(output_width);
-        std::get<3>(signature.field_tuple) = op::resize_bilinear::Output_height(output_height);
-        std::get<5>(signature.field_tuple) = op::resize_bilinear::Layout(layout);
-        std::get<6>(signature.field_tuple) = op::resize_bilinear::Align_corners(align_corners);
-        std::get<7>(signature.field_tuple) =
-                op::resize_bilinear::Half_pixel_centers(half_pixel_centers);
+        std::get<0>(signature.field_tuple) = op::resize::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::resize::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::resize::Output_width(output_width);
+        std::get<3>(signature.field_tuple) = op::resize::Output_height(output_height);
+        std::get<5>(signature.field_tuple) = op::resize::Layout(layout);
+        std::get<6>(signature.field_tuple) = op::resize::Align_corners(align_corners);
+        std::get<7>(signature.field_tuple) = op::resize::Half_pixel_centers(half_pixel_centers);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2759,7 +2928,171 @@ class ResizeBilinearCreator : public OpCreator {
     }
 
    private:
-    op::resize_bilinear::signature signature;
+    op::resize::signature signature;
+};
+
+class ResizeNearestCreator : public OpCreator {
+   public:
+    ResizeNearestCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                         const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() < 3 || inputs.size() > 6 || outputs.size() != 1) {
+            std::cout << "Error: ResizeNearest gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_RESIZE_NEAREST_NEIGHBOR;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_output_width = inputs[1];
+        uint32_t idx_output_height = inputs[2];
+        uint32_t idx_out = outputs[0];
+
+        bool layout = false;
+        bool align_corners = false;
+        bool half_pixel_centers = false;
+        int output_width = 0, output_height = 0;
+        float factor_width = 0, factor_height = 0;
+        if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kINT32) {
+            std::get<4>(signature.field_tuple) = op::resize::Factor(0.0f);
+            auto* p_output_width = scalar_map.at(inputs[1]).data.data();
+            auto* p_output_height = scalar_map.at(inputs[2]).data.data();
+            output_width = *(int32_t*)p_output_width;
+            output_height = *(int32_t*)p_output_height;
+        } else {
+            std::get<4>(signature.field_tuple) = op::resize::Factor(scalar_map.at(inputs[1]));
+            auto* p_factor_width = scalar_map.at(inputs[1]).data.data();
+            auto* p_factor_height = scalar_map.at(inputs[2]).data.data();
+            if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kFP16) {
+                factor_width = *(_Float16*)p_factor_width;
+                factor_height = *(_Float16*)p_factor_height;
+            } else {
+                factor_width = *(float*)p_factor_width;
+                factor_height = *(float*)p_factor_height;
+            }
+            if (abs(factor_width - factor_height) > 1e-5f) {
+                std::cout << "Error: factor_width not equal to factor_height isn't supported in "
+                             "ResizeNearest"
+                          << std::endl;
+                support_state_ = false;
+            }
+        }
+        if (inputs.size() > 3) {
+            uint32_t idx_layout = inputs[3];
+            auto* p_layout = scalar_map.at(idx_layout).data.data();
+            layout = *(bool*)p_layout;
+        }
+        if (inputs.size() == 6) {
+            uint32_t idx_align_corners = inputs[4];
+            uint32_t idx_half_pixel_centers = inputs[5];
+            auto* p_align_corners = scalar_map.at(idx_align_corners).data.data();
+            auto* p_half_pixel_centers = scalar_map.at(idx_half_pixel_centers).data.data();
+            align_corners = *(bool*)p_align_corners;
+            half_pixel_centers = *(bool*)p_half_pixel_centers;
+        }
+        std::get<0>(signature.field_tuple) = op::resize::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::resize::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::resize::Output_width(output_width);
+        std::get<3>(signature.field_tuple) = op::resize::Output_height(output_height);
+        std::get<5>(signature.field_tuple) = op::resize::Layout(layout);
+        std::get<6>(signature.field_tuple) = op::resize::Align_corners(align_corners);
+        std::get<7>(signature.field_tuple) = op::resize::Half_pixel_centers(half_pixel_centers);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        uint8_t* p_output_width = std::get<2>(signature.field_tuple).storage.data.data();
+        uint8_t* p_output_height = std::get<3>(signature.field_tuple).storage.data.data();
+        uint8_t* p_factor = std::get<4>(signature.field_tuple).storage.data.data();
+        uint8_t* p_layout = std::get<5>(signature.field_tuple).storage.data.data();
+        uint8_t* p_align_corners = std::get<6>(signature.field_tuple).storage.data.data();
+        uint8_t* p_half_pixel_centers = std::get<7>(signature.field_tuple).storage.data.data();
+        int32_t output_width = *(int32_t*)p_output_width;
+        int32_t output_height = *(int32_t*)p_output_height;
+        bool align_corners = *(bool*)p_align_corners;
+        bool half_pixel_centers = *(bool*)p_half_pixel_centers;
+        auto layout = AndroidLayoutToVsiLayout(*(bool*)p_layout);
+        auto input_dtype = std::get<0>(signature.field_tuple).storage.dtype;
+
+        if (input_dtype == slang::type::data_type::kFP16) {
+            return graph->CreateOperation<tim::vx::ops::Resize>(
+                    tim::vx::ResizeType::NEAREST_NEIGHBOR, *(_Float16*)p_factor, align_corners,
+                    half_pixel_centers, output_height, output_width, layout);
+        } else {
+            return graph->CreateOperation<tim::vx::ops::Resize>(
+                    tim::vx::ResizeType::NEAREST_NEIGHBOR, *(float*)p_factor, align_corners,
+                    half_pixel_centers, output_height, output_width, layout);
+        }
+    }
+
+   private:
+    op::resize::signature signature;
+};
+
+class RoiAlignCreator : public OpCreator {
+   public:
+    RoiAlignCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                    const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 10 || outputs.size() != 1) {
+            std::cout << "Error: RoiAlign gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_ROI_ALIGN;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_regions = inputs[1];
+        uint32_t idx_batch_index = inputs[2];
+        uint32_t idx_out_h = inputs[3];
+        uint32_t idx_out_w = inputs[4];
+        uint32_t idx_h_ratio = inputs[5];
+        uint32_t idx_w_ratio = inputs[6];
+        uint32_t idx_h_sample = inputs[7];
+        uint32_t idx_w_sample = inputs[8];
+        uint32_t idx_layout = inputs[9];
+        uint32_t idx_out = outputs[0];
+        std::get<0>(signature.field_tuple) = op::roi_align::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::roi_align::Regions(tensor_map.at(idx_regions));
+        std::get<2>(signature.field_tuple) = op::roi_align::BatchIndex(tensor_map.at(idx_batch_index));
+        std::get<3>(signature.field_tuple) = op::roi_align::Output(tensor_map.at(idx_out));
+        std::get<4>(signature.field_tuple) = op::roi_align::OutputHeight(scalar_map.at(idx_out_h));
+        std::get<5>(signature.field_tuple) = op::roi_align::OutputWidth(scalar_map.at(idx_out_w));
+        std::get<6>(signature.field_tuple) = op::roi_align::HeightRatio(scalar_map.at(idx_h_ratio));
+        std::get<7>(signature.field_tuple) = op::roi_align::WidthRatio(scalar_map.at(idx_w_ratio));
+        std::get<8>(signature.field_tuple) = op::roi_align::HSampleNum(scalar_map.at(idx_h_sample));
+        std::get<9>(signature.field_tuple) = op::roi_align::WSampleNum(scalar_map.at(idx_w_sample));
+        std::get<10>(signature.field_tuple) = op::roi_align::Layout(scalar_map.at(idx_layout));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        uint8_t* p_out_height = std::get<4>(signature.field_tuple).storage.data.data();
+        uint8_t* p_out_width = std::get<5>(signature.field_tuple).storage.data.data();
+        uint8_t* p_height_ratio = std::get<6>(signature.field_tuple).storage.data.data();
+        uint8_t* p_width_ratio = std::get<7>(signature.field_tuple).storage.data.data();
+        uint8_t* p_height_sample_num = std::get<8>(signature.field_tuple).storage.data.data();
+        uint8_t* p_width_sample_num = std::get<9>(signature.field_tuple).storage.data.data();
+        uint8_t* p_layout = std::get<10>(signature.field_tuple).storage.data.data();
+        int32_t out_h = *(int32_t*)p_out_height;
+        int32_t out_w = *(int32_t*)p_out_width;
+        int32_t h_sample_num = *(int32_t*)p_height_sample_num;
+        int32_t w_sample_num = *(int32_t*)p_width_sample_num;
+        auto layout = AndroidLayoutToVsiLayout(*(bool*)p_layout);
+        auto datatype = std::get<0>(signature.field_tuple).storage.dtype;
+        if (datatype == slang::type::data_type::kFP16) {
+            auto h_ratio = *(_Float16*)p_height_ratio;
+            auto w_ratio = *(_Float16*)p_width_ratio;
+            return graph->CreateOperation<tim::vx::ops::RoiAlign>(
+                    out_h, out_w, h_ratio, w_ratio, h_sample_num, w_sample_num, layout);
+        } else {
+            auto h_ratio = *(float*)p_height_ratio;
+            auto w_ratio = *(float*)p_width_ratio;
+            return graph->CreateOperation<tim::vx::ops::RoiAlign>(
+                    out_h, out_w, h_ratio, w_ratio, h_sample_num, w_sample_num, layout);
+        }
+    }
+
+   private:
+    op::roi_align::signature signature;
 };
 
 class RsqrtCreator : public OpCreator {
@@ -2775,8 +3108,8 @@ class RsqrtCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::rsqrt::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::rsqrt::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2785,13 +3118,13 @@ class RsqrtCreator : public OpCreator {
     }
 
    private:
-    op::rsqrt::signature signature;
+    op::simple_op::signature signature;
 };
 
 class SelectCreator : public OpCreator {
    public:
     SelectCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                  const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 3 || outputs.size() != 1) {
             std::cout << "Error: Select gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -2831,8 +3164,8 @@ class SinCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::eltwise_unary::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::eltwise_unary::Output(tensor_map.at(idx_out));
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2841,13 +3174,13 @@ class SinCreator : public OpCreator {
     }
 
    private:
-    op::eltwise_unary::signature signature;
+    op::simple_op::signature signature;
 };
 
 class SliceCreator : public OpCreator {
    public:
     SliceCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-               const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+                 const TensorMap& tensor_map, const ScalarMap& scalar_map) {
         if (inputs.size() != 3 || outputs.size() != 1) {
             std::cout << "Error: Slice gets invalid number of operands" << std::endl;
             support_state_ = false;
@@ -2861,14 +3194,12 @@ class SliceCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         auto begin_attr = tensor_map.at(idx_begin).attr;
         if (begin_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Begin tensor as INPUT are not supported in Slice"
-                      << std::endl;
+            std::cout << "Error: Begin tensor as INPUT are not supported in Slice" << std::endl;
             support_state_ = false;
         }
         auto size_attr = tensor_map.at(idx_size).attr;
         if (size_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Size tensor as INPUT are not supported in Slice"
-                      << std::endl;
+            std::cout << "Error: Size tensor as INPUT are not supported in Slice" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::slice::Input(tensor_map.at(idx_in));
@@ -2879,7 +3210,6 @@ class SliceCreator : public OpCreator {
 
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
-
         auto p_begin = std::get<1>(signature.field_tuple).storage.data;
         auto p_size = std::get<2>(signature.field_tuple).storage.data;
         auto begin_length = std::get<1>(signature.field_tuple).storage.data_length / 4;
@@ -2893,54 +3223,6 @@ class SliceCreator : public OpCreator {
 
    private:
     op::slice::signature signature;
-};
-
-class SoftmaxCreator : public OpCreator {
-   public:
-    SoftmaxCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
-                   const TensorMap& tensor_map, const ScalarMap& scalar_map) {
-        if ((inputs.size() != 2 && inputs.size() != 3) || outputs.size() != 1) {
-            std::cout << "Error: Softmax gets invalid number of operands" << std::endl;
-            support_state_ = false;
-        }
-        type_ = ANEURALNETWORKS_SOFTMAX;
-        inputs_ = inputs;
-        outputs_ = outputs;
-        uint32_t idx_in = inputs[0];
-        uint32_t idx_beta = inputs[1];
-        uint32_t idx_out = outputs[0];
-        uint32_t idx_axis;
-
-        std::get<0>(signature.field_tuple) = op::softmax::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::softmax::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::softmax::Beta(scalar_map.at(idx_beta));
-        std::get<3>(signature.field_tuple) = op::softmax::Axis(-1);  // default is -1
-
-        if (inputs.size() == 3) {
-            idx_axis = inputs[2];
-            std::get<3>(signature.field_tuple) = op::softmax::Axis(scalar_map.at(idx_axis));
-        }
-    }
-
-    bool Check() final { return slang::functional::check_signature(signature); }
-    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
-        const uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
-        auto datatype = std::get<2>(signature.field_tuple).storage.dtype;
-        const uint8_t* p_beta = std::get<2>(signature.field_tuple).storage.data.data();
-        const uint8_t* p_axis = std::get<3>(signature.field_tuple).storage.data.data();
-        int32_t axis_android = *(int32_t*)p_axis;
-        int32_t axis_vx = ConvertAxis(axis_android, rank);
-        if (datatype == slang::type::data_type::kFP16) {
-            auto beta = *(_Float16*)p_beta;
-            return graph->CreateOperation<tim::vx::ops::Softmax>(beta, axis_vx);
-        } else {
-            auto beta = *(float*)p_beta;
-            return graph->CreateOperation<tim::vx::ops::Softmax>(beta, axis_vx);
-        }
-    }
-
-   private:
-    op::softmax::signature signature;
 };
 
 class SpaceToDepthCreator : public OpCreator {
@@ -2958,7 +3240,7 @@ class SpaceToDepthCreator : public OpCreator {
         uint32_t idx_block_size = inputs[1];
         uint32_t idx_layout;
         uint32_t idx_out = outputs[0];
-
+        FUNC_LINE;
         auto block_size_attr = tensor_map.at(idx_block_size).attr;
         if (block_size_attr != slang::type::tensor_attr::kCONSTANT) {
             std::cout << "Error: BlockSize tensor as INPUT are not supported in SpaceToDepth"
@@ -3057,6 +3339,59 @@ class SpaceToBatchCreator : public OpCreator {
     op::space_to_batch::signature signature;
 };
 
+class SplitCreator : public OpCreator {
+   public:
+    SplitCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                 const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 3 || outputs.size() == 0) {
+            std::cout << "Error: Split gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_SPLIT;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_axis = inputs[1];
+        uint32_t idx_num_splits = inputs[2];
+        uint32_t idx_out = outputs[0];
+        const uint32_t rank = tensor_map.at(idx_in).shape.size();
+        auto p_axis = scalar_map.at(idx_axis).data.data();
+        const uint8_t* p_num_splits = scalar_map.at(idx_num_splits).data.data();
+        int axis = *(int32_t*)p_axis;
+        int num_splits = *(int32_t*)p_num_splits;
+        int axis_vx = ConvertAxis(axis, rank);
+
+        auto& input_shape = tensor_map.at(idx_in).shape;
+        axis = axis < 0 ? axis + rank : axis;
+        int dim_value = input_shape[axis];
+        if (dim_value % num_splits != 0) {
+            std::cout << "Error: The number of splits can not evenly divide axis size."
+                      << std::endl;
+            support_state_ = false;
+        }
+        uint32_t slice_length = dim_value / num_splits;
+        std::vector<uint32_t> slices(num_splits, slice_length);
+        PrintVector(slices);
+        std::get<0>(signature.field_tuple) = op::split::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::split::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::split::Axis(axis_vx);
+        std::get<3>(signature.field_tuple) = op::split::Slices(slices);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        auto p_axis = std::get<2>(signature.field_tuple).storage.data.data();
+        auto p_slices = std::get<3>(signature.field_tuple).storage.data.data();
+        auto slices_length = std::get<3>(signature.field_tuple).storage.data.size() / 4;
+        int axis = *(int32_t*)p_axis;
+        std::vector<uint32_t> slices((int32_t*)p_slices, (int32_t*)p_slices + slices_length);
+        return graph->CreateOperation<tim::vx::ops::Split>(axis, slices);
+    }
+
+   private:
+    op::split::signature signature;
+};
+
 class SqueezeCreator : public OpCreator {
    public:
     SqueezeCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -3132,8 +3467,9 @@ class SqrtCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::rsqrt::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::rsqrt::Output(tensor_map.at(idx_out));
+
+        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -3142,7 +3478,55 @@ class SqrtCreator : public OpCreator {
     }
 
    private:
-    op::rsqrt::signature signature;
+    op::simple_op::signature signature;
+};
+
+class SoftmaxCreator : public OpCreator {
+   public:
+    SoftmaxCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if ((inputs.size() != 2 && inputs.size() != 3) || outputs.size() != 1) {
+            std::cout << "Error: Softmax gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_SOFTMAX;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_beta = inputs[1];
+        uint32_t idx_out = outputs[0];
+        uint32_t idx_axis;
+
+        std::get<0>(signature.field_tuple) = op::softmax::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::softmax::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::softmax::Beta(scalar_map.at(idx_beta));
+        std::get<3>(signature.field_tuple) = op::softmax::Axis(-1);  // default is -1
+
+        if (inputs.size() == 3) {
+            idx_axis = inputs[2];
+            std::get<3>(signature.field_tuple) = op::softmax::Axis(scalar_map.at(idx_axis));
+        }
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        const uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
+        auto datatype = std::get<2>(signature.field_tuple).storage.dtype;
+        const uint8_t* p_beta = std::get<2>(signature.field_tuple).storage.data.data();
+        const uint8_t* p_axis = std::get<3>(signature.field_tuple).storage.data.data();
+        int32_t axis_android = *(int32_t*)p_axis;
+        int32_t axis_vx = ConvertAxis(axis_android, rank);
+        if (datatype == slang::type::data_type::kFP16) {
+            auto beta = *(_Float16*)p_beta;
+            return graph->CreateOperation<tim::vx::ops::Softmax>(beta, axis_vx);
+        } else {
+            auto beta = *(float*)p_beta;
+            return graph->CreateOperation<tim::vx::ops::Softmax>(beta, axis_vx);
+        }
+    }
+
+   private:
+    op::softmax::signature signature;
 };
 
 class StridedSliceCreator : public OpCreator {
@@ -3292,6 +3676,70 @@ class SubCreator : public OpCreator {
     op::eltwise::signature signature;
 };
 
+class SvdfCreator : public OpCreator {
+   public:
+    SvdfCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() > 7 || inputs.size() < 5 || outputs.size() != 2) {
+            std::cout << "Error: Svdf gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_SVDF;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_weights_feature = inputs[1];
+        uint32_t idx_weights_time = inputs[2];
+        uint32_t idx_state_out = outputs[0];
+        uint32_t idx_out = outputs[1];
+        uint32_t idx_bias, idx_state_in, idx_rank, idx_act;
+        int32_t fuse_code = 0;
+        if (tensor_map.at(inputs[3]).shape.size() == 1) {
+            idx_bias = inputs[3];
+            idx_state_in = inputs[4];
+            idx_rank = inputs[5];
+            std::get<3>(signature.field_tuple) = op::svdf::Bias(tensor_map.at(idx_bias));
+            if (inputs.size() == 7) {
+                idx_act = inputs.back();
+                auto p_act = scalar_map.at(idx_act).data.data();
+                fuse_code = *(int32_t*)p_act;
+            }
+        } else {
+            idx_state_in = inputs[3];
+            idx_rank = inputs[4];
+            if (inputs.size() == 6) {
+                idx_act = inputs.back();
+                auto p_act = scalar_map.at(idx_act).data.data();
+                fuse_code = *(int32_t*)p_act;
+            }
+        }
+        auto& weight_shape = tensor_map.at(idx_weights_time).shape;
+        int num_units = weight_shape[0];
+        std::get<0>(signature.field_tuple) = op::svdf::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) =
+                op::svdf::WeightsFeature(tensor_map.at(idx_weights_feature));
+        std::get<2>(signature.field_tuple) = op::svdf::WeightsTime(tensor_map.at(idx_weights_time));
+        std::get<4>(signature.field_tuple) = op::svdf::StateIn(tensor_map.at(idx_state_in));
+        std::get<5>(signature.field_tuple) = op::svdf::StateOut(tensor_map.at(idx_state_out));
+        std::get<6>(signature.field_tuple) = op::svdf::Output(tensor_map.at(idx_out));
+        std::get<7>(signature.field_tuple) = op::svdf::Rank(scalar_map.at(idx_rank));
+        std::get<8>(signature.field_tuple) = op::svdf::NumUnits(num_units);
+        std::get<9>(signature.field_tuple) = op::svdf::Activation(fuse_code);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        const uint8_t* p_rank = std::get<7>(signature.field_tuple).storage.data.data();
+        int rank = *(int32_t*)p_rank;
+        const uint8_t* p_num_units = std::get<8>(signature.field_tuple).storage.data.data();
+        int num_units = *(int32_t*)p_num_units;
+        return graph->CreateOperation<tim::vx::ops::Svdf>(rank, num_units, num_units);
+    }
+
+   private:
+    op::svdf::signature signature;
+};
+
 class TanhCreator : public OpCreator {
    public:
     TanhCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -3318,6 +3766,87 @@ class TanhCreator : public OpCreator {
 
    private:
     op::activation::signature signature;
+};
+
+class TileCreator : public OpCreator {
+   public:
+    TileCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 1) {
+            std::cout << "Error: Tile gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_TILE;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_multiples = inputs[1];
+        uint32_t idx_out = outputs[0];
+
+        auto p_multiples = tensor_map.at(idx_multiples).data;
+        int multiples_length = tensor_map.at(idx_multiples).data_length / 4;
+        int rank = tensor_map.at(idx_in).shape.size();
+        auto multiples_attr = tensor_map.at(idx_multiples).attr;
+        if (multiples_attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: Multiples tensor as INPUT are not supported in Tile" << std::endl;
+            support_state_ = false;
+        } else if (rank != multiples_length) {
+            std::cout << "Error: The length of multiples length must equal to input rank in tile"
+                      << std::endl;
+            support_state_ = false;
+        }
+        std::vector<int32_t> multiples((int32_t*)p_multiples,
+                                       (int32_t*)p_multiples + multiples_length);
+        std::reverse(multiples.begin(), multiples.end());
+
+        std::get<0>(signature.field_tuple) = op::tile::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::tile::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::tile::Multiples(multiples);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        const uint8_t* p_multiples = std::get<2>(signature.field_tuple).storage.data.data();
+        const int multiples_length = std::get<2>(signature.field_tuple).storage.data.size() / 4;
+        std::vector<int32_t> multiples((int32_t*)p_multiples,
+                                       (int32_t*)p_multiples + multiples_length);
+        return graph->CreateOperation<tim::vx::ops::Tile>(multiples);
+    }
+
+   private:
+    op::tile::signature signature;
+};
+
+class TopKCreator : public OpCreator {
+   public:
+    TopKCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 2) {
+            std::cout << "Error: TopK gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_TOPK_V2;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_k = inputs[1];
+        uint32_t idx_out = outputs[0];
+        uint32_t idx_indices = outputs[1];
+        std::get<0>(signature.field_tuple) = op::topk::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::topk::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::topk::Indices(tensor_map.at(idx_indices));
+        std::get<3>(signature.field_tuple) = op::topk::K(scalar_map.at(idx_k));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        const uint8_t* p_k = std::get<3>(signature.field_tuple).storage.data.data();
+        int k = *(int32_t*)p_k;
+        return graph->CreateOperation<tim::vx::ops::Topk>(k);
+    }
+
+   private:
+    op::topk::signature signature;
 };
 
 class TransposeCreator : public OpCreator {
@@ -3450,8 +3979,7 @@ class TransposeConv2DCreator : public OpCreator {
         std::get<4>(signature.field_tuple) = op::transpose_conv2d::Stride(stride);
         std::get<5>(signature.field_tuple) = op::transpose_conv2d::OutputPadding(output_padding);
         std::get<6>(signature.field_tuple) = op::transpose_conv2d::PadType(padding_code);
-        std::get<7>(signature.field_tuple) =
-                op::transpose_conv2d::Pad(pad);  // construct scalar_feild
+        std::get<7>(signature.field_tuple) = op::transpose_conv2d::Pad(pad);
         std::get<8>(signature.field_tuple) = op::transpose_conv2d::OutputShape(output_shape);
         std::get<9>(signature.field_tuple) =
                 op::transpose_conv2d::Activation(scalar_map.at(idx_act));

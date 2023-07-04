@@ -117,10 +117,6 @@ DEFINE_SIGNATURE(u8asymm_i16dfp,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Output, INT16, DFP))
 
-DEFINE_SIGNATURE(u8asymm_i8dfp,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT8, DFP))
-
 DEFINE_SIGNATURE(u8asymm_f16,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Output, FP16, NO_QUANT))
@@ -209,7 +205,6 @@ ADD_SIGNATURE(f32_f32,
               f32_bf16,
               f32_u8asymm,
               u8asymm_f32,
-              u8asymm_i8dfp,
               u8asymm_i16dfp,
               u8asymm_i8dfp,
               u8asymm_f16,

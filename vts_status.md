@@ -1,75 +1,107 @@
 
-| op                          | totoal | pass | failed | not support |
-| -                           | -      | -    | -      | -           |
-| abs                         | 4      | 3    | 1      | 0           |
-| add                         | 22     | 17   | 0      | 5           |
-| argmax                      | 35     | 35   | 0      | 0           |
-| argmin                      | 35     | 35   | 0      | 0           |
-| avg_pool2d                  | 160    | 140  | 0      | 20          |
-| batch_to_space              | 64     | 52   | 0      | 12          |
-| cast                        | 61     | 60   | 0      | 1           |
-| channel_shuffle             | 200    | 200  | 0      | 0           |
-| concatenation               | 48     | 38   | 0      | 10          |
-| conv2d                      | 854    | 830  | 0      | 24          |
-| depth_to_space              | 80     | 80   | 0      | 0           |
-| dequantize                  | 52     | 40   | 0      | 12          |
-| depthwise_conv2d            | 488    | 472  | 16     | 0           |
-| div                         | 23     | 20   | 0      | 3           |
-| elu                         | 15     | 15   | 0      | 0           |
-| equal                       | 31     | 31   | 0      | 0           |
-| exp                         | 3      | 3    | 0      | 0           |
-| expand_dims                 | 44     | 44   | 0      | 0           |
-| floor                       | 6      | 6    | 0      | 0           |
-| fully_connected             | 106    | 96   | 0      | 10          |
-| gather                      | 97     | 97   | 0      | 0           |
-| greater                     | 31     | 31   | 0      | 0           |
-| greater_equal               | 31     | 31   | 0      | 0           |
-| grouped_conv2d              | 464    | 464  | 0      | 0           |
-| hard_swish                  | 21     | 0    | 21     | 0           |
-| instance_normalization      | 36     | 36   | 0      | 0           |
-| l2_normalization            | 274    | 274  | 0      | 0           |
-| l2_pool2d                   | 60     | 48   | 0      | 12          |
-| less                        | 31     | 31   | 0      | 0           |
-| less_equal                  | 31     | 31   | 0      | 0           |
-| log                         | 3      | 3    | 0      | 0           |
-| local_response_normlization | 258    | 234  | 24     | 0           |
-| logistic                    | 25     | 20   | 0      | 5           |
-| logical_not                 | 1      | 1    | 0      | 0           |
-| logical_and                 | 2      | 2    | 0      | 0           |
-| logical_or                  | 2      | 2    | 0      | 0           |
-| max_pool2d                  | 132    | 112  | 0      | 20          |
-| mean                        | 46     | 24   | 0      | 22          |
-| mul                         | 26     | 21   | 0      | 5           |
-| neg                         | 4      | 4    | 0      | 0           |
-| not_equal                   | 31     | 31   | 0      | 0           |
-| pad & pad_v2                | 128    | 56   | 8      | 64          |
-| pow                         | 24     | 24   | 0      | 0           |
-| prelu                       | 44     | 22   | 0      | 22          |
-| quantize                    | 38     | 32   | 0      | 6           |
-| reduce_all                  | 4      | 4    | 0      | 0           |
-| reduce_any                  | 4      | 4    | 0      | 0           |
-| reduce_max                  | 42     | 42   | 0      | 0           |
-| reduce_min                  | 42     | 42   | 0      | 0           |
-| reduce_prod                 | 26     | 26   | 0      | 0           |
-| reduce_sum                  | 26     | 26   | 0      | 0           |
-| relu                        | 29     | 24   | 0      | 5           |
-| relu1                       | 29     | 24   | 0      | 5           |
-| relu6                       | 29     | 24   | 0      | 5           |
-| reshape                     | 30     | 14   | 0      | 16          |
-| resize_bilinear             | 190    | 174  | 0      | 16          |
-| rsqrt                       | 11     | 11   | 0      | 0           |
-| Select                      | 28     | 28   | 0      | 0           |
-| sin                         | 3      | 3    | 0      | 0           |
-| slice                       | 46     | 0    | 0      | 46          |
-| softmax                     | 481    | 476  | 0      | 5           |
-| space_to_depth              | 80     | 80   | 0      | 0           |
-| space_to_batch              | 224    | 112  | 0      | 112         |
-| squeeze                     | 40     | 26   | 0      | 14          |
-| sqrt                        | 3      | 3    | 0      | 0           |
-| strided_slice               | 190    | 96   | 0      | 94          |
-| sub                         | 310    | 305  | 0      | 5           |
-| tanh                        | 15     | 10   | 0      | 5           |
-| transpose                   | 34     | 12   | 0      | 22          |
-| transpose_conv2d            | 604    | 500  | 84     | 20          |
+| OP                           | Status | API feature level | totoal | pass | fail | not support |
+| -                            | -      | -                 | -      | -    | -    | -           |
+| ADD                          | Yes    | 1                 | 22     | 17   | 0    | 5           |
+| AVERAGE_POOL_2D              | Yes    | 1                 | 160    | 140  | 0    | 20          |
+| CONCATENATION                | Yes    | 1                 | 48     | 38   | 0    | 10          |
+| CONV_2D                      | Yes    | 1                 | 854    | 830  | 0    | 24          |
+| DEPTHWISE_CONV_2D            | Yes    | 1                 | 488    | 472  | 16   | 0           |
+| DEPTH_TO_SPACE               | Yes    | 1                 | 80     | 80   | 0    | 0           |
+| DEQUANTIZE                   | Yes    | 1                 | 52     | 40   | 0    | 12          |
+| EMBEDDING_LOOKUP             | Yes    | 1                 | 11     | 11   | 0    | 0           |
+| FLOOR                        | Yes    | 1                 | 6      | 6    | 0    | 0           |
+| FULLY_CONNECTED              | Yes    | 1                 | 106    | 96   | 0    | 10          |
+| HASHTABLE_LOOKUP             | Yes    | 1                 | 6      | 6    | 0    | 0           |
+| L2_NORMALIZATION             | Yes    | 1                 | 274    | 274  | 0    | 0           |
+| L2_POOL_2D                   | Yes    | 1                 | 60     | 48   | 0    | 12          |
+| LOCAL_RESPONSE_NORMALIZATION | Yes    | 1                 | 258    | 234  | 24   | 0           |
+| LOGISTIC                     | Yes    | 1                 | 25     | 20   | 0    | 5           |
+| LSH_PROJECTION               | No     | 3                 | 0      | 0    | 0    | 0           |
+| LSTM                         | Yes    | 1                 | 25     | 20   | 0    | 5           |
+| MAX_POOL_2D                  | Yes    | 1                 | 132    | 112  | 0    | 20          |
+| MUL                          | Yes    | 1                 | 26     | 21   | 0    | 5           |
+| RELU                         | Yes    | 1                 | 29     | 24   | 0    | 5           |
+| RELU1                        | Yes    | 1                 | 29     | 24   | 0    | 5           |
+| RELU6                        | Yes    | 1                 | 29     | 24   | 0    | 5           |
+| RESHAPE                      | Yes    | 1                 | 30     | 14   | 0    | 16          |
+| RESIZE_BILINEAR              | Yes    | 1                 | 190    | 174  | 0    | 16          |
+| RNN                          | No     | 1                 | 0      | 0    | 0    | 0           |
+| SOFTMAX                      | Yes    | 1                 | 481    | 476  | 0    | 5           |
+| SPACE_TO_DEPTH               | Yes    | 1                 | 80     | 80   | 0    | 0           |
+| SVDF                         | Yes    | 1                 | 22     | 22   | 0    | 0           |
+| TANH                         | Yes    | 1                 | 15     | 10   | 0    | 5           |
+| BATCH_TO_SPACE_ND            | Yes    | 2                 | 64     | 52   | 0    | 12          |
+| DIV                          | Yes    | 2                 | 23     | 20   | 0    | 3           |
+| MEAN                         | Yes    | 2                 | 46     | 24   | 0    | 22          |
+| PAD                          | Yes    | 2                 | 84     | 38   | 6    | 42          |
+| SPACE_TO_BATCH_ND            | Yes    | 2                 | 224    | 112  | 0    | 112         |
+| SQUEEZE                      | Yes    | 2                 | 40     | 26   | 0    | 14          |
+| STRIDED_SLICE                | Yes    | 2                 | 190    | 96   | 0    | 94          |
+| SUB                          | Yes    | 2                 | 310    | 305  | 0    | 5           |
+| TRANSPOSE                    | Yes    | 2                 | 34     | 12   | 0    | 22          |
+| ABS                          | Yes    | 3                 | 4      | 3    | 1    | 0           |
+| ARGMAX                       | Yes    | 3                 | 35     | 35   | 0    | 0           |
+| ARGMIN                       | Yes    | 3                 | 35     | 35   | 0    | 0           |
+| AXIS_ALIGNED_BBOX_TRANSFORM  | No     | 3                 | 0      | 0    | 0    | 0           |
+| BIDIRECTIONAL_SEQUENCE_LSTM  | No     | 3                 | 0      | 0    | 0    | 0           |
+| BIDIRECTIONAL_SEQUENCE_RNN   | No     | 3                 | 0      | 0    | 0    | 0           |
+| BOX_WITH_NMS_LIMIT           | No     | 3                 | 0      | 0    | 0    | 0           |
+| CAST                         | Yes    | 3                 | 61     | 60   | 0    | 1           |
+| CHANNEL_SHUFFLE              | Yes    | 3                 | 200    | 200  | 0    | 0           |
+| DETECTION_POSTPROCESSING     | No     | 3                 | 0      | 0    | 0    | 0           |
+| EQUAL                        | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| EXP                          | Yes    | 3                 | 3      | 3    | 0    | 0           |
+| EXPAND_DIMS                  | Yes    | 3                 | 44     | 44   | 0    | 0           |
+| GATHER                       | Yes    | 3                 | 97     | 97   | 0    | 0           |
+| GENERATE_PROPOSALS           | No     | 3                 | 0      | 0    | 0    | 0           |
+| GREATER                      | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| GREATER_EQUAL                | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| GROUPED_CONV_2D              | Yes    | 3                 | 464    | 464  | 0    | 0           |
+| HEATMAP_MAX_KEYPOINT         | No     | 3                 | 0      | 0    | 0    | 0           |
+| INSTANCE_NORMALIZATION       | Yes    | 3                 | 36     | 36   | 0    | 0           |
+| LESS                         | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| LESS_EQUAL                   | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| LOG                          | Yes    | 3                 | 3      | 3    | 0    | 0           |
+| LOGICAL_AND                  | Yes    | 3                 | 2      | 2    | 0    | 0           |
+| LOGICAL_NOT                  | Yes    | 3                 | 1      | 1    | 0    | 0           |
+| LOGICAL_OR                   | Yes    | 3                 | 2      | 2    | 0    | 0           |
+| LOG_SOFTMAX                  | Yes    | 3                 | 12     | 12   | 0    | 0           |
+| MAXIMUM                      | Yes    | 3                 | 26     | 26   | 0    | 0           |
+| MINIMUM                      | Yes    | 3                 | 26     | 26   | 0    | 0           |
+| NEG                          | Yes    | 3                 | 4      | 4    | 0    | 0           |
+| NOT_EQUAL                    | Yes    | 3                 | 31     | 31   | 0    | 0           |
+| PAD_V2                       | Yes    | 3                 | 44     | 20   | 2    | 22          |
+| POW                          | Yes    | 3                 | 24     | 24   | 0    | 0           |
+| PRELU                        | Yes    | 3                 | 44     | 22   | 0    | 22          |
+| QUANTIZE                     | Yes    | 3                 | 38     | 32   | 0    | 6           |
+| QUANTIZED_16BIT_LSTM         | No     | 3                 | 0      | 0    | 0    | 0           |
+| RANDOM_MULTINOMIAL           | No     | 3                 | 0      | 0    | 0    | 0           |
+| REDUCE_ALL                   | Yes    | 3                 | 4      | 4    | 0    | 0           |
+| REDUCE_ANY                   | Yes    | 3                 | 4      | 4    | 0    | 0           |
+| REDUCE_MAX                   | Yes    | 3                 | 42     | 42   | 0    | 0           |
+| REDUCE_MIN                   | Yes    | 3                 | 42     | 42   | 0    | 0           |
+| REDUCE_PROD                  | Yes    | 3                 | 26     | 26   | 0    | 0           |
+| REDUCE_SUM                   | Yes    | 3                 | 26     | 26   | 0    | 0           |
+| ROI_ALIGN                    | Yes    | 3                 | 110    | 100  | 0    | 10          |
+| ROI_POOLING                  | No     | 3                 | 0      | 0    | 0    | 0           |
+| RESIZE_NEAREST_NEIGHBOR      | Yes    | 3                 | 408    | 328  | 0    | 80          |
+| RSQRT                        | Yes    | 3                 | 11     | 11   | 0    | 0           |
+| SELECT                       | Yes    | 3                 | 28     | 28   | 0    | 0           |
+| SIN                          | Yes    | 3                 | 3      | 3    | 0    | 0           |
+| SLICE                        | Yes    | 3                 | 46     | 0    | 0    | 46          |
+| SPLIT                        | Yes    | 3                 | 62     | 62   | 0    | 0           |
+| SQRT                         | Yes    | 3                 | 3      | 3    | 0    | 0           |
+| TILE                         | Yes    | 3                 | 32     | 0    | 0    | 32          |
+| TOPK_V2                      | Yes    | 3                 | 35     | 35   | 0    | 0           |
+| TRANSPOSE_CONV_2D            | Yes    | 3                 | 604    | 500  | 84   | 20          |
+| UNIDIRECTIONAL_SEQUENCE_LSTM | No     | 3                 | 0      | 0    | 0    | 0           |
+| UNIDIRECTIONAL_SEQUENCE_RNN  | No     | 3                 | 0      | 0    | 0    | 0           |
+| QUANTIZED_LSTM               | No     | 4                 | 0      | 0    | 0    | 0           |
+| IF                           | No     | 4                 | 0      | 0    | 0    | 0           |
+| WHILE                        | No     | 4                 | 0      | 0    | 0    | 0           |
+| ELU                          | Yes    | 4                 | 15     | 15   | 0    | 0           |
+| HARD_SWISH                   | Yes    | 4                 | 21     | 0    | 21   | 0           |
+| FILE                         | No     | 4                 | 0      | 0    | 0    | 0           |
+| RANK                         | No     | 4                 | 0      | 0    | 0    | 0           |
 
 **NOTE**: test result with imx8mp android 13

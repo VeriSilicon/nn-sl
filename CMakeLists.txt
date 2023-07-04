@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+set(project_name "VSI.AndroidSL")
+project(${project_name})
 
 option(SL_DIST_BUILD "Build from distributed package"   ON)
 option(PUBLIC_TIM_VX "Download TIM_VX from github"      ON)
@@ -6,13 +8,11 @@ option(RUN_NBG       "Turn on NBG feature"              ON)
 option(USE_GRPC      "Use gRPC support, work with NBG"  OFF)
 
 if(${RUN_NBG})
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DRUN_NBG")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRUN_NBG")
+  add_definitions(-DRUN_NBG)
 endif()
 
 if(${USE_GRPC})
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_GRPC")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_GRPC")
+  add_definitions(-DUSE_GRPC)
 endif()
 
 if(${CMAKE_BUILD_TYPE})
@@ -20,11 +20,6 @@ if(${CMAKE_BUILD_TYPE})
     "'-DCMAKE_BUILD_TYPE=Debug'.")
   set(CMAKE_BUILD_TYPE "Release")
 endif()
-
-set(project_name "VSI.AndroidSL")
-project(
-    ${project_name}
-    )
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/module")
 

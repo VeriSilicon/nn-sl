@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -234,6 +234,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_EMBEDDING_LOOKUP:
+            op_creators_.push_back(std::make_shared<EmbeddingLookupCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_EQUAL:
             op_creators_.push_back(std::make_shared<EqualCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -281,6 +286,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_GROUPED_CONV_2D:
             op_creators_.push_back(std::make_shared<GroupedConv2DCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_HASHTABLE_LOOKUP:
+            op_creators_.push_back(std::make_shared<HashtableLookupCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -339,6 +349,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_LOG_SOFTMAX:
+            op_creators_.push_back(std::make_shared<LogSoftmaxCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_L2_POOL_2D:
             op_creators_.push_back(std::make_shared<L2Pool2DCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -351,6 +366,16 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_MEAN:
             op_creators_.push_back(std::make_shared<MeanCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_MAXIMUM:
+            op_creators_.push_back(std::make_shared<MaximumCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_MINIMUM:
+            op_creators_.push_back(std::make_shared<MinimumCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -449,6 +474,16 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_RESIZE_NEAREST_NEIGHBOR:
+            op_creators_.push_back(std::make_shared<ResizeNearestCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_ROI_ALIGN:
+            op_creators_.push_back(std::make_shared<RoiAlignCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_RSQRT:
             op_creators_.push_back(std::make_shared<RsqrtCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -484,6 +519,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_SPLIT:
+            op_creators_.push_back(std::make_shared<SplitCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_SQUEEZE:
             op_creators_.push_back(std::make_shared<SqueezeCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -504,8 +544,23 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_SVDF:
+            op_creators_.push_back(std::make_shared<SvdfCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_TANH:
             op_creators_.push_back(std::make_shared<TanhCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_TILE:
+            op_creators_.push_back(std::make_shared<TileCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_TOPK_V2:
+            op_creators_.push_back(std::make_shared<TopKCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;

@@ -37,6 +37,55 @@ enum class data_type {
   kINVALID = kCNT
 };
 
+static std::string as_string(data_type dtype) {
+  std::string str;
+  switch (dtype) {
+    case data_type::kFP32:
+    case data_type::kTF32:
+      str = "float32";
+      break;
+    case data_type::kFP16:
+      str = "float16";
+      break;
+    case data_type::kBF16:
+      str = "bfloat16";
+      break;
+    case data_type::kINT64:
+      str = "int64";
+      break;
+    case data_type::kINT32:
+      str = "int32";
+      break;
+    case data_type::kUINT32:
+      str = "uint32";
+      break;
+    case data_type::kINT16:
+      str = "int16";
+      break;
+    case data_type::kUINT16:
+      str = "uint16";
+      break;
+    case data_type::kINT8:
+      str = "int8";
+      break;
+    case data_type::kUINT8:
+      str = "uint8";
+      break;
+    case data_type::kINT4:
+      str = "int4";
+      break;
+    case data_type::kUINT4:
+      str = "uint4";
+      break;
+    case data_type::kBOOL8:
+      str = "bool";
+      break;
+    default:
+      str = "invalid";
+  }
+  return str;
+}
+
 enum class pad_type {
   kNONE,
   kSAME,
@@ -54,6 +103,43 @@ enum class layout_type {
   kNHWC,
   kNCHW
 };
+
+// Function to iterate through all values
+// I equals number of values in tuple
+template <size_t I = 0,
+          //   typename visitor,
+          typename... Ts>
+typename std::enable_if<I == sizeof...(Ts), void>::type Tuple_For(
+    std::tuple<Ts...> tup) {
+  // If iterated through all values
+  // of tuple, then simply return.
+  return;
+}
+
+template <size_t I = 0,
+          //   typename visitor,
+          typename... Ts>
+typename std::enable_if<(I < sizeof...(Ts)), void>::type Tuple_For(
+    std::tuple<Ts...> tup
+    // , visitor
+) {
+  // Print element of tuple
+  // visitor(std::get<I>(tup)) ;
+  auto field_instance = std::get<I>(tup);
+  field_instance.doc();
+
+  // Go to next element
+  Tuple_For<I + 1
+            // , visitor
+            >(tup);
+}
+
+// template <typename rule>
+// struct rule_visitor {
+//     void operator()(const rule& r) {
+//         std::cout << "visit rule " << std::endl;
+//     }
+// };
 
 template <typename CPP_TYPE>
 struct value_type_convertor {
@@ -107,6 +193,32 @@ enum class quant_type {
   kSYMM_PCQ,
   kDFP,
   kINVALID,
+
+};
+
+static std::string as_string(quant_type q) {
+  std::string str;
+  switch (q) {
+    case quant_type::kNONE:
+      str = "none";
+      break;
+    case quant_type::kASYMM:
+      str = "asymm";
+      break;
+    case quant_type::kSYMM:
+      str = "symm";
+      break;
+    case quant_type::kSYMM_PCQ:
+      str = "pcq_symm";
+      break;
+    case quant_type::kDFP:
+      str = "dfp";
+      break;
+    default:
+      str = "invalid";
+      break;
+  }
+  return str;
 };
 
 enum class modifier {
@@ -177,6 +289,16 @@ using is_tensor = std::is_same<T, tensor_tag>;
 template <typename T>
 using is_scalar = std::is_same<T, scalar_tag>;
 
+template <typename T>
+std::string role_name_as_string() {
+    return std::string("not set up role name");
+}
+
+template <typename Field>
+struct role_name {
+    static const void* doc;
+};
+
 template <typename R /*role*/,
           typename T /*type*/,
           modifier M /*modifier*/,
@@ -187,6 +309,9 @@ struct field {
   static constexpr modifier m = M;
   field() {}
 
+  void doc();
+
+  std::string field_name;
   S storage;
   // type field_type;
 };
@@ -234,6 +359,11 @@ struct tensor_field : public field<R, tensor_tag, M, tensor_storage> {
   }
 
   uint32_t& channel_dim() { return this->storage.channel_dim; }
+
+  void doc() {
+    std::string name((const char*)R::doc);// = role_name_as_string<R>();
+    std::cout << as_string(this->storage.dtype) << "/" << as_string(this->storage.qtype) << "|";
+  }
 };
 
 template <typename R, modifier M>
@@ -273,7 +403,14 @@ struct scalar_field : public field<R, scalar_tag, M, scalar_storage> {
       return T(0);
     }
   }
+
+  void doc() {
+    std::cout << as_string(this->storage.dtype) << "|";
+    // << std::endl
+    ;
+  }
 };
+
 
 template <typename... F /*fileds*/>
 struct signature {
@@ -292,6 +429,12 @@ struct signature {
     return std::get<Elem>(field_tuple);
   }
 
+  void doc() {
+    std::cout << "|" ;
+    Tuple_For(field_tuple);
+    std::cout << std::endl;
+  }
+
   std::tuple<F...> field_tuple;
 };
 
@@ -303,6 +446,10 @@ struct rule {
   template <typename S /*signature type*/>
   typename T::rtype operator()(const S& sobj) {
     return expr(sobj);
+  }
+
+  void doc() {
+    std::cout << "Document placeholder for rule" << std::endl;
   }
 
   T expr;

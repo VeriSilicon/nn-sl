@@ -8,7 +8,7 @@ DEFINE_SIGNATURE(f32_f32,
 DEFINE_SIGNATURE(f16_f16,
                  TENSOR(Input, FP16, NO_QUANT),
                  TENSOR(Shape, INT32, NO_QUANT, CONSTANT),
-                 TENSOR(Output, FP32, NO_QUANT))
+                 TENSOR(Output, FP16, NO_QUANT))
 
 DEFINE_SIGNATURE(f16_f32,
                  TENSOR(Input, FP16, NO_QUANT),

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2023 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -72,36 +72,63 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
         int result = ANEURALNETWORKS_NO_ERROR;
         switch (op_creator->Type()) {
             case ANEURALNETWORKS_ABS:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+            case ANEURALNETWORKS_ARGMAX:
+            case ANEURALNETWORKS_ARGMIN:
+            case ANEURALNETWORKS_BATCH_TO_SPACE_ND:
+            case ANEURALNETWORKS_CAST:
+            case ANEURALNETWORKS_CHANNEL_SHUFFLE:
+            case ANEURALNETWORKS_DEPTH_TO_SPACE:
+            case ANEURALNETWORKS_DEQUANTIZE:
+            case ANEURALNETWORKS_ELU:
+            case ANEURALNETWORKS_EXP:
+            case ANEURALNETWORKS_EXPAND_DIMS:
+            case ANEURALNETWORKS_FLOOR:
+            case ANEURALNETWORKS_HARD_SWISH:
+            case ANEURALNETWORKS_L2_NORMALIZATION:
+            case ANEURALNETWORKS_LOG:
+            case ANEURALNETWORKS_LOCAL_RESPONSE_NORMALIZATION:
+            case ANEURALNETWORKS_LOGISTIC:
+            case ANEURALNETWORKS_LOGICAL_NOT:
+            case ANEURALNETWORKS_LOG_SOFTMAX:
+            case ANEURALNETWORKS_MEAN:
+            case ANEURALNETWORKS_NEG:
+            case ANEURALNETWORKS_PAD:
+            case ANEURALNETWORKS_PAD_V2:
+            case ANEURALNETWORKS_QUANTIZE:
+            case ANEURALNETWORKS_REDUCE_ALL:
+            case ANEURALNETWORKS_REDUCE_ANY:
+            case ANEURALNETWORKS_REDUCE_MAX:
+            case ANEURALNETWORKS_REDUCE_MIN:
+            case ANEURALNETWORKS_REDUCE_PROD:
+            case ANEURALNETWORKS_REDUCE_SUM:
+            case ANEURALNETWORKS_RELU:
+            case ANEURALNETWORKS_RELU1:
+            case ANEURALNETWORKS_RELU6:
+            case ANEURALNETWORKS_RESHAPE:
+            case ANEURALNETWORKS_RESIZE_BILINEAR:
+            case ANEURALNETWORKS_RESIZE_NEAREST_NEIGHBOR:
+            case ANEURALNETWORKS_RSQRT:
+            case ANEURALNETWORKS_SIN:
+            case ANEURALNETWORKS_SLICE:
+            case ANEURALNETWORKS_SOFTMAX:
+            case ANEURALNETWORKS_SPACE_TO_DEPTH:
+            case ANEURALNETWORKS_SPACE_TO_BATCH_ND:
+            case ANEURALNETWORKS_SQUEEZE:
+            case ANEURALNETWORKS_SQRT:
+            case ANEURALNETWORKS_STRIDED_SLICE:
+            case ANEURALNETWORKS_TANH:
+            case ANEURALNETWORKS_TILE:
+            case ANEURALNETWORKS_TRANSPOSE:
+                result = MapOneInputOneOutput(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_ADD:
                 result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                     inputs, outputs);
                 break;
-            case ANEURALNETWORKS_ARGMAX:
-                result = MapArg(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
-                                outputs);
-                break;
-            case ANEURALNETWORKS_ARGMIN:
-                result = MapArg(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
-                                outputs);
-                break;
             case ANEURALNETWORKS_AVERAGE_POOL_2D:
                 result = MapPool2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                    inputs, outputs);
-                break;
-            case ANEURALNETWORKS_BATCH_TO_SPACE_ND:
-                result = MapBatchToSpace(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_CAST:
-                result = MapCast(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
-                                 outputs);
-                break;
-            case ANEURALNETWORKS_CHANNEL_SHUFFLE:
-                result = MapChannelShuffle(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                           scalar_map, inputs, outputs);
                 break;
             case ANEURALNETWORKS_CONCATENATION:
                 result = MapConcatenation(vx_graph_, op_creator, vx_tensors_, tensor_map,
@@ -115,36 +142,16 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
                 result = MapDepthwiseConv2D(vx_graph_, op_creator, vx_tensors_, tensor_map,
                                             scalar_map, inputs, outputs);
                 break;
-            case ANEURALNETWORKS_DEPTH_TO_SPACE:
-                result = MapDepthToSpace(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_DEQUANTIZE:
-                result = MapDataConvert(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                        inputs, outputs);
-                break;
             case ANEURALNETWORKS_DIV:
                 result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                     inputs, outputs);
                 break;
-            case ANEURALNETWORKS_ELU:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
+            case ANEURALNETWORKS_EMBEDDING_LOOKUP:
+                result = MapEmbeddingLookup(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                                         inputs, outputs);
                 break;
             case ANEURALNETWORKS_EQUAL:
                 result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_EXP:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_EXPAND_DIMS:
-                result = MapExpandDims(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
-                break;
-            case ANEURALNETWORKS_FLOOR:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_FULLY_CONNECTED:
@@ -167,17 +174,13 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
                 result = MapGroupedConv2d(vx_graph_, op_creator, vx_tensors_, tensor_map,
                                           scalar_map, inputs, outputs);
                 break;
-            case ANEURALNETWORKS_HARD_SWISH:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
+            case ANEURALNETWORKS_HASHTABLE_LOOKUP:
+                result = MapHashtableLookup(vx_graph_, op_creator, vx_tensors_, tensor_map,
+                                            scalar_map, inputs, outputs);
                 break;
             case ANEURALNETWORKS_INSTANCE_NORMALIZATION:
                 result = MapInstanceNormalization(vx_graph_, op_creator, vx_tensors_, tensor_map,
                                                   scalar_map, inputs, outputs);
-                break;
-            case ANEURALNETWORKS_L2_NORMALIZATION:
-                result = MapL2Normalization(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                            scalar_map, inputs, outputs);
                 break;
             case ANEURALNETWORKS_LESS:
                 result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
@@ -187,25 +190,9 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
                 result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                          inputs, outputs);
                 break;
-            case ANEURALNETWORKS_LOG:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_LOCAL_RESPONSE_NORMALIZATION:
-                result = MapLocalResponseNormalization(vx_graph_, op_creator, vx_tensors_,
-                                                       tensor_map, scalar_map, inputs, outputs);
-                break;
-            case ANEURALNETWORKS_LOGISTIC:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
-                break;
             case ANEURALNETWORKS_LOGICAL_AND:
                 result = MapLogicalAndOr(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                          inputs, outputs);
-                break;
-            case ANEURALNETWORKS_LOGICAL_NOT:
-                result = MapLogcialNot(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
                 break;
             case ANEURALNETWORKS_LOGICAL_OR:
                 result = MapLogicalAndOr(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
@@ -219,137 +206,53 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
                 result = MapPool2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                    inputs, outputs);
                 break;
-            case ANEURALNETWORKS_MEAN:
-                result = MapMean(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+            case ANEURALNETWORKS_MAXIMUM:
+                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                                 outputs);
+                break;
+            case ANEURALNETWORKS_MINIMUM:
+                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
                                  outputs);
                 break;
             case ANEURALNETWORKS_MUL:
                 result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                     inputs, outputs);
                 break;
-            case ANEURALNETWORKS_NEG:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
             case ANEURALNETWORKS_NOT_EQUAL:
                 result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                          inputs, outputs);
                 break;
-            case ANEURALNETWORKS_PAD:
-                result = MapPad(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
-                                outputs);
-                break;
-            case ANEURALNETWORKS_PAD_V2:
-                result = MapPadV2(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                  inputs, outputs);
-                break;
             case ANEURALNETWORKS_POW:
-                result = MapPow(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
-                                outputs);
+                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map,
+                                             scalar_map, inputs, outputs);
                 break;
             case ANEURALNETWORKS_PRELU:
                 result = MapPrelu(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                   inputs, outputs);
                 break;
-            case ANEURALNETWORKS_QUANTIZE:
-                result = MapDataConvert(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                        inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_ALL:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_ANY:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_MAX:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_MIN:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_PROD:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_REDUCE_SUM:
-                result = MapReduce(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RELU:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RELU1:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RELU6:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RESHAPE:
-                result = MapReshape(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RESIZE_BILINEAR:
-                result = MapResizeBilinear(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                           scalar_map, inputs, outputs);
-                break;
-            case ANEURALNETWORKS_RSQRT:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
+            case ANEURALNETWORKS_ROI_ALIGN:
+                result = MapRoiAlign(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                                     inputs, outputs);
                 break;
             case ANEURALNETWORKS_SELECT:
                 result = MapSelect(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                    inputs, outputs);
                 break;
-            case ANEURALNETWORKS_SIN:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SLICE:
-                result = MapSlice(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+            case ANEURALNETWORKS_SPLIT:
+                result = MapSplit(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                   inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SOFTMAX:
-                result = MapSoftmax(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SPACE_TO_DEPTH:
-                result = MapSpaceToDepth(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SPACE_TO_BATCH_ND:
-                result = MapSpaceToBatch(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SQUEEZE:
-                result = MapSqueeze(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
-                break;
-            case ANEURALNETWORKS_SQRT:
-                result = MapEltwiseUnary(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
-                break;
-            case ANEURALNETWORKS_STRIDED_SLICE:
-                result = MapStridedSlice(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                         inputs, outputs);
                 break;
             case ANEURALNETWORKS_SUB:
                 result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
                                     inputs, outputs);
                 break;
-            case ANEURALNETWORKS_TANH:
-                result = MapActivation(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                       inputs, outputs);
+            case ANEURALNETWORKS_SVDF:
+                result = MapSvdf(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                                 outputs);
                 break;
-            case ANEURALNETWORKS_TRANSPOSE:
-                result = MapTranspose(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                      inputs, outputs);
+            case ANEURALNETWORKS_TOPK_V2:
+                result = MapTopK(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                                 outputs);
                 break;
             case ANEURALNETWORKS_TRANSPOSE_CONV_2D:
                 result = MapTransposeConv2d(vx_graph_, op_creator, vx_tensors_, tensor_map,
@@ -407,8 +310,10 @@ int Execution::SetOutputFromMemory(int32_t index, const ANeuralNetworksOperandTy
 
 int Execution::Compute() {
     Model* model = compilation_->GetModel();
+    // This function will be called multiple times, and need to judge whether it is the first call
     if (vx_graph_ == nullptr) {
-        // construct graph
+        output_order_.clear();
+        out_memory_order_.clear(); // Reset this two vector for new graphs
         vx_graph_ = vx_context_->CreateGraph();
         auto tensor_map = model->Tensors();
         auto scalar_map = model->Scalars();
@@ -419,7 +324,6 @@ int Execution::Compute() {
         for (uint32_t out : model->Outputs()) {
             vx_tensors_[out] = CreateTvxIOTensor(tensor_map[out], tim::vx::TensorAttribute::OUTPUT);
         }
-
         int result = MapOperations(operations, tensor_map, scalar_map);
         if (result != ANEURALNETWORKS_NO_ERROR) {
             std::cout << "map operation fail" << std::endl;
@@ -427,6 +331,19 @@ int Execution::Compute() {
         }
 
         layout_infered_ = tim::transform::LayoutInference(vx_graph_, vx_context_);
+        auto infer_outputs = layout_infered_.first->OutputsTensor();
+        auto src_outputs = vx_graph_->OutputsTensor();
+        auto graph_io_map = layout_infered_.second;
+        // Confirm output order between infer_graph and src_graph
+        for (int i = 0; i < src_outputs.size(); ++i) {
+            auto infer_out =  graph_io_map[src_outputs[i]];
+            for(int j = 0; j < infer_outputs.size(); ++j) {
+                if(infer_out == infer_outputs[j]) {
+                    output_order_.push_back(model->Outputs()[j]);
+                    out_memory_order_.push_back(j);
+                }
+            }
+        }
 #ifdef RUN_NBG
         // compile graph to executable, just use the first device
         auto device = compilation_->Devices()[0]->Device();
@@ -443,7 +360,7 @@ int Execution::Compute() {
             executable_->SetInput(input_handle);
             input_handles_.push_back(input_handle);
         }
-        for (uint32_t o : model->Outputs()) {
+        for (uint32_t o : output_order_) {
             auto output_handle = executable_->AllocateTensor(vx_tensors_[o]->GetSpec());
             executable_->SetOutput(output_handle);
             output_handles_.push_back(output_handle);
@@ -463,30 +380,32 @@ int Execution::Compute() {
             auto memory = io_memory.memory;
             size_t offset = io_memory.offset;
             size_t length = io_memory.length;
-            if (offset + length > memory->Length()) {
-                std::cout << "input memory is out of range." << std::endl;
-                return ANEURALNETWORKS_OUT_OF_MEMORY;
-            }
-            uint8_t* data = reinterpret_cast<uint8_t*>(memory->Data());
+            if (memory != nullptr) {
+                if (offset + length > memory->Length()) {
+                    std::cout << "input memory is out of range." << std::endl;
+                    return ANEURALNETWORKS_OUT_OF_MEMORY;
+                }
+                uint8_t* data = reinterpret_cast<uint8_t*>(memory->Data());
 #ifdef RUN_NBG
-            if (!input_handle->CopyDataToTensor(reinterpret_cast<void*>(data + offset), length)) {
-                std::cout << "copy data to tensor fail." << std::endl;
-                return ANEURALNETWORKS_BAD_STATE;
-            }
-#else
-            auto infered_input_tensor = layout_infered_.second[src_input_tensor];
-            if (infered_input_tensor) {
-                if (!infered_input_tensor->CopyDataToTensor(reinterpret_cast<void*>(data + offset),
-                                                            length)) {
+                if (!input_handle->CopyDataToTensor(reinterpret_cast<void*>(data + offset), length)) {
                     std::cout << "copy data to tensor fail." << std::endl;
                     return ANEURALNETWORKS_BAD_STATE;
                 }
-            } else {
-                std::cout << "tensor in source graph removed before do layout "
-                             "inference - if zero sized tensor involved"
-                          << std::endl;
-            }
+#else
+                auto infered_input_tensor = layout_infered_.second[src_input_tensor];
+                if (infered_input_tensor) {
+                    if (!infered_input_tensor->CopyDataToTensor(reinterpret_cast<void*>(data + offset),
+                                                                length)) {
+                        std::cout << "copy data to tensor fail." << std::endl;
+                        return ANEURALNETWORKS_BAD_STATE;
+                    }
+                } else {
+                    std::cout << "tensor in source graph removed before do layout "
+                                "inference - if zero sized tensor involved"
+                            << std::endl;
+                }
 #endif
+            }
         }
 #ifdef RUN_NBG
         executable_->Submit(executable_);
@@ -507,16 +426,14 @@ int Execution::Compute() {
     }
 #endif
     // copy output to memory
-    auto outputs = model->Outputs();
-    for (int i = 0; i < outputs.size(); ++i) {
+    for (int i = 0; i < output_order_.size(); ++i) {
 #ifdef RUN_NBG
         auto output_handle = output_handles_[i];
-        auto io_memory = outputs_memory_[i];
 #else
-        uint32_t index = outputs[i];
+        uint32_t index = output_order_[i];
         auto src_output_tensor = vx_tensors_[index];
-        auto io_memory = outputs_memory_[i];
 #endif
+        auto io_memory = outputs_memory_[out_memory_order_[i]];
         auto memory = io_memory.memory;
         size_t offset = io_memory.offset;
         size_t length = io_memory.length;
