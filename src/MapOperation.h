@@ -37,6 +37,10 @@ int MapOneInputOneOutput(std::shared_ptr<tim::vx::Graph> graph,
                          std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                          const TensorMap& tensor_map, const ScalarMap& scalar_map,
                          const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);
+int MapBatchMatmul(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+                   std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                   const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);
 int MapConcatenation(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                      std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                      const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -87,6 +91,10 @@ int MapLogicalAndOr(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
                     std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                     const TensorMap& tensor_map, const ScalarMap& scalar_map,
                     const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);
+int MapPack(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+            const TensorMap& tensor_map, const ScalarMap& scalar_map,
+            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);
 int MapPool2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
               const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -99,7 +107,7 @@ int MapRelationalOp(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
                     std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                     const TensorMap& tensor_map, const ScalarMap& scalar_map,
                     const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);
-int MapRoiAlign(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+int MapRoi(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                 std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                 const TensorMap& tensor_map, const ScalarMap& scalar_map,
                 const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs);

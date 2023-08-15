@@ -103,7 +103,7 @@ int Model::SetOperandValue(uint32_t index, const void* buffer, size_t length) {
         return ANEURALNETWORKS_BAD_DATA;
     }
     if (buffer == nullptr) {
-        std::cout << "Warning: This tensor is empty" << std::endl;
+        std::cout << "Warning: Operand index " << index << " is empty" << std::endl;
         return ANEURALNETWORKS_NO_ERROR;
     }
     if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
@@ -186,6 +186,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_AVERAGE_POOL_2D:
             op_creators_.push_back(std::make_shared<AveragePool2DCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_BATCH_MATMUL:
+            op_creators_.push_back(std::make_shared<BatchMatmulCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -379,6 +384,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_MIRROR_PAD:
+            op_creators_.push_back(std::make_shared<MirrorPadCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_MUL:
             op_creators_.push_back(std::make_shared<MulCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -391,6 +401,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
             break;
         case ANEURALNETWORKS_NOT_EQUAL:
             op_creators_.push_back(std::make_shared<NotEqualCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
+        case ANEURALNETWORKS_PACK:
+            op_creators_.push_back(std::make_shared<PackCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
@@ -474,6 +489,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        case ANEURALNETWORKS_REVERSE:
+            op_creators_.push_back(std::make_shared<ReverseCreator>(
+                    std::vector<uint32_t>(inputs, inputs + inputCount),
+                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            break;
         case ANEURALNETWORKS_RESIZE_NEAREST_NEIGHBOR:
             op_creators_.push_back(std::make_shared<ResizeNearestCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -484,6 +504,12 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
+        // roi_pooling not support at present
+        // case ANEURALNETWORKS_ROI_POOLING:
+        //     op_creators_.push_back(std::make_shared<RoiPoolingCreator>(
+        //             std::vector<uint32_t>(inputs, inputs + inputCount),
+        //             std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+        //     break;
         case ANEURALNETWORKS_RSQRT:
             op_creators_.push_back(std::make_shared<RsqrtCreator>(
                     std::vector<uint32_t>(inputs, inputs + inputCount),
@@ -575,13 +601,11 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
         default:
-            std::cout << "operation is not supported" << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
+            op_creators_.push_back(std::make_shared<OpPlaceHolderCreator>(type));
+            break;
     }
     auto op = op_creators_.back();
-    if (op->support_state_ == false) {
-        return ANEURALNETWORKS_BAD_DATA;
-    }
+    op_supports_.push_back(op->support_state_);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
@@ -597,8 +621,9 @@ int Model::IdentifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs,
 }
 
 int Model::GetSupportedOperations(bool* supported_ops) const {
+    std::cout << "SL graph has "<< op_creators_.size() << " ops totally"<< std::endl;
     for (int i = 0; i < op_creators_.size(); ++i) {
-        supported_ops[i] = op_creators_[i]->Check();
+        supported_ops[i] = op_creators_[i]->Check() && op_supports_[i];
         std::cout << "op " << op_creators_[i]->Type() << " support status: " << supported_ops[i]
                   << std::endl;
     }

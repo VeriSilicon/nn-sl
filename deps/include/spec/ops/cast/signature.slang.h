@@ -1,107 +1,107 @@
 START_DEFINE_SIGNATURES()
 
-DEFINE_SIGNATURE(u8asym_f32,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(u8sym_f32,
-                 TENSOR(Input, UINT8, SYMM),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(i8asym_f32,
-                 TENSOR(Input, INT8, ASYMM),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(i8sym_f32,
-                 TENSOR(Input, INT8, SYMM),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(u8asym_f16,
-                 TENSOR(Input, UINT8, ASYMM),
+DEFINE_SIGNATURE(f16_f16,
+                 TENSOR(Input, FP16, NO_QUANT),
                  TENSOR(Output, FP16, NO_QUANT))
 
-DEFINE_SIGNATURE(u8sym_f16,
-                 TENSOR(Input, UINT8, SYMM),
-                 TENSOR(Output, FP16, NO_QUANT))
+DEFINE_SIGNATURE(f16_f32,
+                 TENSOR(Input, FP16, NO_QUANT),
+                 TENSOR(Output, FP32, NO_QUANT))
 
-DEFINE_SIGNATURE(i8sym_f16,
-                 TENSOR(Input, INT8, SYMM),
-                 TENSOR(Output, FP16, NO_QUANT))
+DEFINE_SIGNATURE(f16_i32,
+                 TENSOR(Input, FP16, NO_QUANT),
+                 TENSOR(Output, INT32, NO_QUANT))
 
-DEFINE_SIGNATURE(i8asym_f16,
-                 TENSOR(Input, INT8, ASYMM),
-                 TENSOR(Output, FP16, NO_QUANT))
-
-DEFINE_SIGNATURE(i8asymm_i8asymm,
-                 TENSOR(Input, INT8, ASYMM),
-                 TENSOR(Output, INT8, ASYMM))
-
-DEFINE_SIGNATURE(i8symm_i8symm,
-                 TENSOR(Input, INT8, SYMM),
-                 TENSOR(Output, INT8, SYMM))
-
-DEFINE_SIGNATURE(i8asymm_u8asymm,
-                 TENSOR(Input, INT8, ASYMM),
+DEFINE_SIGNATURE(f16_u8asymm,
+                 TENSOR(Input, FP16, NO_QUANT),
                  TENSOR(Output, UINT8, ASYMM))
+
+DEFINE_SIGNATURE(f32_f16,
+                 TENSOR(Input, FP32, NO_QUANT),
+                 TENSOR(Output, FP16, NO_QUANT))
+
+DEFINE_SIGNATURE(f32_f32,
+                 TENSOR(Input, FP32, NO_QUANT),
+                 TENSOR(Output, FP32, NO_QUANT))
+
+DEFINE_SIGNATURE(f32_i32,
+                 TENSOR(Input, FP32, NO_QUANT),
+                 TENSOR(Output, INT32, NO_QUANT))
+
+DEFINE_SIGNATURE(f32_u8asymm,
+                 TENSOR(Input, FP32, NO_QUANT),
+                 TENSOR(Output, UINT8, ASYMM))
+
+DEFINE_SIGNATURE(bool8_bool8,
+                 TENSOR(Input, BOOL8, NO_QUANT),
+                 TENSOR(Output, BOOL8, NO_QUANT))
 
 DEFINE_SIGNATURE(u8asymm_u8asymm,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Output, UINT8, ASYMM))
 
-DEFINE_SIGNATURE(u8asymm_i8asymm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT8, ASYMM))
+DEFINE_SIGNATURE(i8symm_i8symm,
+                 TENSOR(Input, INT8, SYMM),
+                 TENSOR(Output, INT8, SYMM))
 
-DEFINE_SIGNATURE(u4asymm_u8asymm,
-                 TENSOR(Input, UINT4, ASYMM),
+DEFINE_SIGNATURE(i32_i32,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Output, INT32, NO_QUANT))
+
+DEFINE_SIGNATURE(i32_f16,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Output, FP16, NO_QUANT))
+
+DEFINE_SIGNATURE(i32_f32,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Output, FP32, NO_QUANT))
+
+DEFINE_SIGNATURE(i32_u8asymm,
+                 TENSOR(Input, INT32, NO_QUANT),
                  TENSOR(Output, UINT8, ASYMM))
 
-DEFINE_SIGNATURE(u4symm_u8asymm,
-                 TENSOR(Input, UINT4, SYMM),
-                 TENSOR(Output, UINT8, ASYMM))
+DEFINE_SIGNATURE(i32_i8symm,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Output, INT8, SYMM))
 
-DEFINE_SIGNATURE(u8asymm_u4asymm,
+DEFINE_SIGNATURE(u16asymm_u16asymm,
+                 TENSOR(Input, UINT16, ASYMM),
+                 TENSOR(Output, UINT16, ASYMM))
+
+DEFINE_SIGNATURE(i16symm_i16symm,
+                 TENSOR(Input, INT16, SYMM),
+                 TENSOR(Output, INT16, SYMM))
+
+DEFINE_SIGNATURE(u8asymm_f16,
                  TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, UINT4, ASYMM))
+                 TENSOR(Output, FP16, NO_QUANT))
 
-DEFINE_SIGNATURE(u8asymm_u4symm,
+DEFINE_SIGNATURE(u8asymm_f32,
                  TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, UINT4, SYMM))
+                 TENSOR(Output, FP32, NO_QUANT))
 
-DEFINE_SIGNATURE(i4asymm_u8asymm,
-                 TENSOR(Input, INT4, ASYMM),
-                 TENSOR(Output, UINT8, ASYMM))
-
-DEFINE_SIGNATURE(i4symm_u8asymm,
-                 TENSOR(Input, INT4, SYMM),
-                 TENSOR(Output, UINT8, ASYMM))
-
-DEFINE_SIGNATURE(u8asymm_i4asymm,
+DEFINE_SIGNATURE(u8asymm_i32,
                  TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT4, ASYMM))
+                 TENSOR(Output, INT32, NO_QUANT))
 
-DEFINE_SIGNATURE(u8asymm_i4symm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT4, SYMM))
-
-ADD_SIGNATURE(u8asym_f32,
-              u8sym_f32,
-              i8asym_f32,
-              i8sym_f32,
-              u8asym_f16,
-              u8sym_f16,
-              i8sym_f16,
-              i8asym_f16,
-              i8asymm_i8asymm,
-              i8symm_i8symm,
-              i8asymm_u8asymm,
+ADD_SIGNATURE(f16_f16,
+              f16_f32,
+              f16_i32,
+              f16_u8asymm,
+              f32_f16,
+              f32_f32,
+              f32_i32,
+              f32_u8asymm,
+              bool8_bool8,
               u8asymm_u8asymm,
-              u8asymm_i8asymm,
-              u4asymm_u8asymm,
-              u4symm_u8asymm,
-              u8asymm_u4asymm,
-              u8asymm_u4symm,
-              i4asymm_u8asymm,
-              i4symm_u8asymm,
-              u8asymm_i4asymm,
-              u8asymm_i4symm)
+              i8symm_i8symm,
+              i32_i32,
+              i32_f16,
+              i32_f32,
+              i32_u8asymm,
+              i32_i8symm,
+              u16asymm_u16asymm,
+              i16symm_i16symm,
+              u8asymm_f16,
+              u8asymm_f32,
+              u8asymm_i32)

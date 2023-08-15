@@ -75,6 +75,7 @@ class Model {
     TensorMap tensors_;
     ScalarMap scalars_;
     std::vector<std::shared_ptr<OpCreator>> op_creators_;
+    std::vector<bool> op_supports_;
     std::unordered_map<uint32_t, std::vector<uint8_t>> constant_copy_;
     std::vector<uint32_t> inputs_;
     std::vector<uint32_t> outputs_;

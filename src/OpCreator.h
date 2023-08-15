@@ -31,9 +31,12 @@
 #include "Utils.h"
 #include "slang/functional.h"
 #include "slang/type_system.h"
+#include "spec/ops/act_with_alpha/spec.h"
 #include "spec/ops/activation/spec.h"
 #include "spec/ops/arg/spec.h"
+#include "spec/ops/batch_matmul/spec.h"
 #include "spec/ops/batch_to_space/spec.h"
+#include "spec/ops/cast/spec.h"
 #include "spec/ops/channel_shuffle/spec.h"
 #include "spec/ops/concatenation/spec.h"
 #include "spec/ops/conv2d/spec.h"
@@ -54,17 +57,22 @@
 #include "spec/ops/logical_and_or/spec.h"
 #include "spec/ops/logical_not/spec.h"
 #include "spec/ops/mean/spec.h"
+#include "spec/ops/mirror_pad/spec.h"
+#include "spec/ops/pack/spec.h"
 #include "spec/ops/pad/spec.h"
 #include "spec/ops/pad_v2/spec.h"
 #include "spec/ops/pool2d/spec.h"
 #include "spec/ops/pow/spec.h"
 #include "spec/ops/prelu/spec.h"
+#include "spec/ops/quantize/spec.h"
 #include "spec/ops/reduce_all_any/spec.h"
 #include "spec/ops/reduce_max_min_prod_sum/spec.h"
 #include "spec/ops/relational_op/spec.h"
 #include "spec/ops/reshape/spec.h"
 #include "spec/ops/resize/spec.h"
+#include "spec/ops/reverse/spec.h"
 #include "spec/ops/roi_align/spec.h"
+#include "spec/ops/roi_pooling/spec.h"
 #include "spec/ops/select/spec.h"
 #include "spec/ops/simple_op/spec.h"
 #include "spec/ops/slice/spec.h"
@@ -146,6 +154,21 @@ class OpCreator {
     std::vector<uint32_t> outputs_;
 };
 
+class OpPlaceHolderCreator : public OpCreator {
+   public:
+    OpPlaceHolderCreator(ANeuralNetworksOperationType type) {
+        std::cout << "operation " << type << " is not supported, create op placeholder instead"
+                  << std::endl;
+        support_state_ = false;
+        type_ = type;
+    }
+
+    bool Check() final { return false; }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        return graph->CreateOperation<tim::vx::ops::Abs>(); // Prevent compiler warnings, not use
+    }
+};
+
 class AbsCreator : public OpCreator {
    public:
     AbsCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -217,7 +240,7 @@ class ArgmaxCreator : public OpCreator {
         uint32_t idx_axis = inputs[1];
         uint32_t idx_out = outputs[0];
         auto p_axis = scalar_map.at(idx_axis).data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         uint32_t rank = tensor_map.at(idx_in).shape.size();
         int32_t axis_vx = ConvertAxis(axis, rank);
 
@@ -229,7 +252,7 @@ class ArgmaxCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_axis = std::get<2>(signature.field_tuple).storage.data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         return graph->CreateOperation<tim::vx::ops::ArgMax>(axis);
     }
 
@@ -252,7 +275,7 @@ class ArgminCreator : public OpCreator {
         uint32_t idx_axis = inputs[1];
         uint32_t idx_out = outputs[0];
         auto p_axis = scalar_map.at(idx_axis).data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         uint32_t rank = tensor_map.at(idx_in).shape.size();
         int32_t axis_vx = ConvertAxis(axis, rank);
 
@@ -264,7 +287,7 @@ class ArgminCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_axis = std::get<2>(signature.field_tuple).storage.data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         return graph->CreateOperation<tim::vx::ops::ArgMin>(axis);
     }
 
@@ -386,6 +409,54 @@ class AveragePool2DCreator : public OpCreator {
     op::pool2d::signature signature;
 };
 
+class BatchMatmulCreator : public OpCreator {
+   public:
+    BatchMatmulCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                       const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if ((inputs.size() != 2 && inputs.size() != 4) || outputs.size() != 1) {
+            std::cout << "Error: BatchMatmul gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_BATCH_MATMUL;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        bool adj_x = false, adj_y = false;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_in2 = inputs[1];
+        uint32_t idx_out = outputs[0];
+        if (inputs.size() == 4) {
+            uint32_t idx_adj_x = inputs[2];
+            uint32_t idx_adj_y = inputs[3];
+            auto p_adj_x = scalar_map.at(idx_adj_x).data.data();
+            auto p_adj_y = scalar_map.at(idx_adj_y).data.data();
+            adj_x = *(bool*)p_adj_x;
+            adj_y = *(bool*)p_adj_y;
+            if (adj_x && adj_y) {
+                std::cout << "Error: Matmul does not support x and y being true at the same time"
+                          << std::endl;
+                support_state_ = false;
+            }
+        }
+        std::get<0>(signature.field_tuple) = op::batch_matmul::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::batch_matmul::Input2(tensor_map.at(idx_in2));
+        std::get<2>(signature.field_tuple) = op::batch_matmul::Output(tensor_map.at(idx_out));
+        std::get<3>(signature.field_tuple) = op::batch_matmul::Adj_x(adj_x);
+        std::get<4>(signature.field_tuple) = op::batch_matmul::Adj_y(adj_y);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        auto p_adj_x = std::get<3>(signature.field_tuple).storage.data.data();
+        auto p_adj_y = std::get<4>(signature.field_tuple).storage.data.data();
+        bool adj_x = *(bool*)p_adj_x;
+        bool adj_y = *(bool*)p_adj_y;
+        return graph->CreateOperation<tim::vx::ops::Matmul>(adj_x, adj_y);
+    }
+
+   private:
+    op::batch_matmul::signature signature;
+};
+
 class BatchToSpaceCreator : public OpCreator {
    public:
     BatchToSpaceCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -404,7 +475,7 @@ class BatchToSpaceCreator : public OpCreator {
 
         auto block_size_attr = tensor_map.at(idx_block_size).attr;
         if (block_size_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: BlockSize tensor as INPUT are not supported in BatchToSpace"
+            std::cout << "Error: BlockSize tensor as INPUT is not supported in BatchToSpace"
                       << std::endl;
             support_state_ = false;
         }
@@ -422,7 +493,8 @@ class BatchToSpaceCreator : public OpCreator {
         std::get<0>(signature.field_tuple) = op::batch_to_space::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::batch_to_space::Output(tensor_map.at(idx_out));
         std::get<2>(signature.field_tuple) = op::batch_to_space::BlockSize(block_size);
-        std::get<3>(signature.field_tuple) = op::batch_to_space::Crop(std::vector<int>{0, 0, 0, 0});
+        std::get<3>(signature.field_tuple) =
+                op::batch_to_space::Crop(std::vector<int32_t>{0, 0, 0, 0});
         std::get<4>(signature.field_tuple) = op::batch_to_space::Layout(layout);
     }
 
@@ -434,7 +506,7 @@ class BatchToSpaceCreator : public OpCreator {
         std::vector<int32_t> block_size = {*((int32_t*)p_block_size + 1), *(int32_t*)p_block_size};
         auto layout = AndroidLayoutToVsiLayout(*(bool*)p_layout);
         return graph->CreateOperation<tim::vx::ops::Batch2Space>(
-                block_size, std::vector<int>{0, 0, 0, 0}, layout);
+                block_size, std::vector<int32_t>{0, 0, 0, 0}, layout);
     }
 
    private:
@@ -445,7 +517,7 @@ class ConcatenationCreator : public OpCreator {
    public:
     ConcatenationCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
                          const TensorMap& tensor_map, const ScalarMap& scalar_map) {
-        if (outputs.size() != 1) {
+        if (inputs.size() < 2 || outputs.size() != 1) {
             std::cout << "Concatenation gets invalid number of operands" << std::endl;
             support_state_ = false;
         }
@@ -459,7 +531,7 @@ class ConcatenationCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
 
         auto p_axis = scalar_map.at(idx_axis).data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         int32_t axis_vx = ConvertAxis(axis, tensor_map.at(idx_in).shape.size());
 
         std::get<0>(signature.field_tuple) = op::concatenation::Input(tensor_map.at(idx_in));
@@ -494,9 +566,16 @@ class CastCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-
-        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
+        auto input_type = tensor_map.at(idx_in).dtype;
+        auto quant_type = tensor_map.at(idx_in).qtype;
+        if (input_type == slang::type::data_type::kUINT16 &&
+            quant_type == slang::type::quant_type::kASYMM) {
+            std::cout << "Error: Cast can not support input dtype uint16 with qtype asymm"
+                      << std::endl;
+            support_state_ = false;
+        }
+        std::get<0>(signature.field_tuple) = op::cast::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::cast::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -505,7 +584,7 @@ class CastCreator : public OpCreator {
     }
 
    private:
-    op::simple_op::signature signature;
+    op::cast::signature signature;
 };
 
 class ChannelShuffleCreator : public OpCreator {
@@ -524,7 +603,7 @@ class ChannelShuffleCreator : public OpCreator {
         uint32_t idx_axis = inputs[2];
         uint32_t idx_out = outputs[0];
         auto p_axis = scalar_map.at(idx_axis).data.data();
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         int32_t axis_vx = ConvertAxis(axis, tensor_map.at(idx_in).shape.size());
 
         std::get<0>(signature.field_tuple) = op::channel_shuffle::Input(tensor_map.at(idx_in));
@@ -572,6 +651,11 @@ class Conv2DCreator : public OpCreator {
         int32_t padding_code = 0;
         bool layout = false;  // default to CWHN(false), true implies WHCN.
 
+        auto bias_type = tensor_map.at(idx_bias).dtype;
+        if (bias_type == slang::type::data_type::kFP16) {
+            std::cout << "Error: F16 bias is not support in conv2d" << std::endl;
+            support_state_ = false;
+        }
         if (inputs.size() == 7 ||
             scalar_map.at(inputs.at(7)).dtype == slang::type::data_type::kBOOL8) {
             // implies implicit padding
@@ -697,6 +781,11 @@ class DepthwiseConv2DCreator : public OpCreator {
         int32_t padding_code = 0;
         bool layout = false;  // default to CWHN(false), true implies WHCN.
 
+        auto bias_type = tensor_map.at(idx_bias).dtype;
+        if (bias_type == slang::type::data_type::kFP16) {
+            std::cout << "Error: F16 bias is not support in depthwise conv" << std::endl;
+            support_state_ = false;
+        }
         if (inputs.size() == 8 ||
             scalar_map.at(inputs.at(8)).dtype == slang::type::data_type::kBOOL8) {
             // implies implicit padding
@@ -861,8 +950,13 @@ class DequantizeCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
+        auto q_type = tensor_map.at(idx_in).qtype;
+        if (q_type == slang::type::quant_type::kSYMM_PCQ) {
+            std::cout << "Error: Dequantize not support perchannel channel quantize" << std::endl;
+            support_state_ = false;
+        }
+        std::get<0>(signature.field_tuple) = op::dequantize::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::dequantize::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -871,7 +965,7 @@ class DequantizeCreator : public OpCreator {
     }
 
    private:
-    op::simple_op::signature signature;
+    op::dequantize::signature signature;
 };
 
 class DivCreator : public OpCreator {
@@ -949,9 +1043,9 @@ class EluCreator : public OpCreator {
         uint32_t idx_in = inputs[0];
         uint32_t idx_alpha = inputs[1];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::activation::Alpha(scalar_map.at(idx_alpha));
+        std::get<0>(signature.field_tuple) = op::act_with_alpha::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::act_with_alpha::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::act_with_alpha::Alpha(scalar_map.at(idx_alpha));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -967,7 +1061,7 @@ class EluCreator : public OpCreator {
     }
 
    private:
-    op::activation::signature signature;
+    op::act_with_alpha::signature signature;
 };
 
 class EqualCreator : public OpCreator {
@@ -1038,14 +1132,30 @@ class ExpandDimsCreator : public OpCreator {
         uint32_t idx_in = inputs[0];
         uint32_t idx_axis = inputs[1];
         uint32_t idx_out = outputs[0];
+        auto p_axis = scalar_map.at(idx_axis).data.data();
+        int32_t axis_android = *(int32_t*)p_axis;
+        int32_t rank = tensor_map.at(idx_in).shape.size();
+        int32_t axis_vx = ConvertAxis(axis_android, rank + 1);
+
         std::get<0>(signature.field_tuple) = op::expand_dims::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::expand_dims::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::expand_dims::Axis(scalar_map.at(idx_axis));
+        std::get<2>(signature.field_tuple) = op::expand_dims::Axis(axis_vx);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
-        std::vector<uint32_t>& output_shape = std::get<1>(signature.field_tuple).storage.shape;
+        auto p_axis = std::get<2>(signature.field_tuple).storage.data.data();
+        int32_t axis = *(int32_t*)p_axis;
+        int32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
+        std::vector<uint32_t> input_shape = std::get<0>(signature.field_tuple).storage.shape;
+        std::reverse(input_shape.begin(), input_shape.end());
+        std::vector<uint32_t> output_shape(rank + 1, 1);
+        for (int i = 0, j = 0; i < output_shape.size(); ++i) {
+            if (i != axis) {
+                output_shape[i] = input_shape[j];
+                ++j;
+            }
+        }
         return graph->CreateOperation<tim::vx::ops::Reshape>(output_shape);
     }
 
@@ -1095,16 +1205,18 @@ class FullyConnectedCreator : public OpCreator {
         uint32_t idx_bias = inputs[2];
         uint32_t idx_out = outputs[0];
 
+        auto bias_type = tensor_map.at(idx_bias).dtype;
+        if (bias_type == slang::type::data_type::kFP16) {
+            std::cout << "Error: F16 bias is not support in fully connected" << std::endl;
+            support_state_ = false;
+        }
         std::get<0>(signature.field_tuple) = op::fully_connected::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::fully_connected::Weight(tensor_map.at(idx_weight));
         std::get<2>(signature.field_tuple) = op::fully_connected::Bias(tensor_map.at(idx_bias));
         std::get<3>(signature.field_tuple) = op::fully_connected::Output(tensor_map.at(idx_out));
     }
 
-    bool Check() final {
-        return slang::functional::check_signature(signature) &&
-               slang::functional::check_rule(signature);
-    }
+    bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         auto p_weight = (uint32_t*)std::get<1>(signature.field_tuple).storage.shape.data();
         int32_t weight = *(int32_t*)p_weight;
@@ -1131,8 +1243,9 @@ class GatherCreator : public OpCreator {
         uint32_t idx_indices = inputs[2];
         uint32_t idx_out = outputs[0];
         auto p_axis = scalar_map.at(idx_axis).data.data();
-        int axis = *(int32_t*)p_axis;
-        int32_t axis_vx = ConvertAxis(axis, tensor_map.at(idx_in).shape.size());
+        int32_t axis_android = *(int32_t*)p_axis;
+        int32_t rank = tensor_map.at(idx_in).shape.size();
+        int32_t axis_vx = ConvertAxis(axis_android, rank);
 
         std::get<0>(signature.field_tuple) = op::gather::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::gather::Indices(tensor_map.at(idx_indices));
@@ -1140,10 +1253,7 @@ class GatherCreator : public OpCreator {
         std::get<3>(signature.field_tuple) = op::gather::Axis(axis_vx);
     }
 
-    bool Check() final {
-        return slang::functional::check_signature(signature) &&
-               slang::functional::check_rule(signature);
-    }
+    bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         auto p_axis = std::get<3>(signature.field_tuple).storage.data.data();
         int32_t axis = *(int32_t*)p_axis;
@@ -1366,7 +1476,6 @@ class HardSwishCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -1540,13 +1649,13 @@ class LocalResponseNormalizationCreator : public OpCreator {
         uint32_t idx_beta = inputs[4];
         uint32_t idx_out = outputs[0];
 
-        int32_t axis = -1;
+        int32_t axis_android = -1;
         if (inputs.size() == 6) {
             uint32_t idx_axis = inputs[5];
             auto p_axis = scalar_map.at(idx_axis).data.data();
-            axis = *(int32_t*)p_axis;
+            axis_android = *(int32_t*)p_axis;
         }
-        int32_t axis_vx = ConvertAxis(axis, tensor_map.at(idx_in).shape.size());
+        int32_t axis_vx = ConvertAxis(axis_android, tensor_map.at(idx_in).shape.size());
         std::get<0>(signature.field_tuple) =
                 op::local_response_normalization::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) =
@@ -1568,16 +1677,16 @@ class LocalResponseNormalizationCreator : public OpCreator {
         const uint8_t* p_bias = std::get<3>(signature.field_tuple).storage.data.data();
         const uint8_t* p_alpha = std::get<4>(signature.field_tuple).storage.data.data();
         const uint8_t* p_beta = std::get<5>(signature.field_tuple).storage.data.data();
-        const uint8_t* p_vxaxis = std::get<6>(signature.field_tuple).storage.data.data();
-        uint32_t size = *(int32_t*)p_radius * 2;
+        const uint8_t* p_axis = std::get<6>(signature.field_tuple).storage.data.data();
+        uint32_t size = *(int32_t*)p_radius * 2 + 1;
         auto input_type = std::get<0>(signature.field_tuple).storage.dtype;
         if (input_type == slang::type::data_type::kFP32) {
             return graph->CreateOperation<tim::vx::ops::LocalResponseNormalization>(
-                    size, *(float*)p_alpha, *(float*)p_beta, *(float*)p_bias, *(int32_t*)p_vxaxis);
+                    size, *(float*)p_alpha, *(float*)p_beta, *(float*)p_bias, *(int32_t*)p_axis);
         } else {
             return graph->CreateOperation<tim::vx::ops::LocalResponseNormalization>(
                     size, *(_Float16*)p_alpha, *(_Float16*)p_beta, *(_Float16*)p_bias,
-                    *(int32_t*)p_vxaxis);
+                    *(int32_t*)p_axis);
         }
     }
 
@@ -1626,7 +1735,6 @@ class LogisticCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2037,7 +2145,7 @@ class MeanCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Pad tensor as INPUT are not supported in Mean" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in Mean" << std::endl;
             support_state_ = false;
         }
         auto p_keepdims = (bool*)scalar_map.at(idx_keepdims).data.data();
@@ -2096,6 +2204,73 @@ class MinimumCreator : public OpCreator {
 
    private:
     op::eltwise::signature signature;
+};
+
+class MirrorPadCreator : public OpCreator {
+   public:
+    MirrorPadCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                     const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if ((inputs.size() != 3) || outputs.size() != 1) {
+            std::cout << "Error: MirrorPad gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_MIRROR_PAD;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_pad = inputs[1];
+        uint32_t idx_mode = inputs[2];
+        uint32_t idx_out = outputs[0];
+
+        auto pad_attr = tensor_map.at(idx_pad).attr;
+        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: Pad tensor as INPUT isn't supported in MirrorPad" << std::endl;
+            support_state_ = false;
+        }
+        auto p_pad = (int32_t*)tensor_map.at(idx_pad).data;
+        uint32_t pad_length = tensor_map.at(idx_pad).data_length / 4;
+        std::vector<int32_t> pad(p_pad, p_pad + pad_length);
+
+        std::get<0>(signature.field_tuple) = op::mirror_pad::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::mirror_pad::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::mirror_pad::Pad(pad);
+        std::get<3>(signature.field_tuple) = op::mirror_pad::PadMode(scalar_map.at(idx_mode));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
+        auto p_pad = (uint32_t*)std::get<2>(signature.field_tuple).storage.data.data();
+        auto p_pad_mode = (int32_t*)std::get<3>(signature.field_tuple).storage.data.data();
+        std::vector<uint32_t> front_size, back_size;
+        for (int i = 0; i < rank; ++i) {
+            front_size.push_back(*(p_pad + i * 2));
+            back_size.push_back(*(p_pad + i * 2 + 1));
+        }
+        // The dim value reverses along with the shape value.
+        std::reverse(front_size.begin(), front_size.end());
+        std::reverse(back_size.begin(), back_size.end());
+        int32_t pad_mode = *p_pad_mode;
+//         FUNC_LINE;
+// PrintVector(front_size);
+// PrintVector(back_size);
+        auto vsi_pad_mode = tim::vx::ops::Pad::PAD_MODE_CONSTANT;
+        switch (pad_mode) {
+            case 0:
+                vsi_pad_mode = tim::vx::ops::Pad::PAD_MODE_REFLECT;
+                break;
+            case 1:
+                vsi_pad_mode = tim::vx::ops::Pad::PAD_MODE_SYMMETRIC;
+                break;
+            default:
+                std::cout << "Error: Invalid pad mode in MirrorPad" << std::endl;
+                break;
+        }
+        return graph->CreateOperation<tim::vx::ops::Pad>(front_size, back_size, 0, vsi_pad_mode);
+    }
+
+   private:
+    op::mirror_pad::signature signature;
 };
 
 class MulCreator : public OpCreator {
@@ -2182,6 +2357,43 @@ class NotEqualCreator : public OpCreator {
     op::relational_op::signature signature;
 };
 
+class PackCreator : public OpCreator {
+   public:
+    PackCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if ((inputs.size() < 2) || outputs.size() != 1) {
+            std::cout << "Error: Pack gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_PACK;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_axis = inputs[0];
+        uint32_t idx_in = inputs[1];
+        uint32_t idx_out = outputs[0];
+        int32_t input_cnt = inputs.size() - 1;
+        auto p_axis = scalar_map.at(idx_axis).data.data();
+        int32_t axis_android = *(int32_t*)p_axis;
+        int32_t axis_vx = ConvertAxis(axis_android, tensor_map.at(idx_out).shape.size());
+        std::get<0>(signature.field_tuple) = op::pack::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::pack::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::pack::Axis(axis_vx);
+        std::get<3>(signature.field_tuple) = op::pack::Input_cnt(input_cnt);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        auto p_axis = std::get<2>(signature.field_tuple).storage.data.data();
+        auto p_input_cnt = std::get<3>(signature.field_tuple).storage.data.data();
+        int32_t axis = *(int32_t*)p_axis;
+        int32_t input_cnt = *(int32_t*)p_input_cnt;
+        return graph->CreateOperation<tim::vx::ops::Stack>(axis, input_cnt);
+    }
+
+   private:
+    op::pack::signature signature;
+};
+
 class PadCreator : public OpCreator {
    public:
     PadCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -2199,7 +2411,7 @@ class PadCreator : public OpCreator {
 
         auto pad_attr = tensor_map.at(idx_in_pad).attr;
         if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Pad tensor as INPUT are not supported in Pad" << std::endl;
+            std::cout << "Error: Pad tensor as INPUT is not supported in Pad" << std::endl;
             support_state_ = false;
         }
         auto p_pad = (int32_t*)tensor_map.at(idx_in_pad).data;
@@ -2211,10 +2423,7 @@ class PadCreator : public OpCreator {
         std::get<2>(signature.field_tuple) = op::pad::Pad(pad);
     }
 
-    bool Check() final {
-        return slang::functional::check_signature(signature) &&
-               slang::functional::check_rule(signature);
-    }
+    bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
         auto p_pad = (uint32_t*)std::get<2>(signature.field_tuple).storage.data.data();
@@ -2252,7 +2461,7 @@ class PadV2Creator : public OpCreator {
 
         auto pad_attr = tensor_map.at(idx_in_pad).attr;
         if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Pad tensor as INPUT are not supported in Pad" << std::endl;
+            std::cout << "Error: Pad tensor as INPUT is not supported in Pad" << std::endl;
             support_state_ = false;
         }
         auto p_pad = (int32_t*)tensor_map.at(idx_in_pad).data;
@@ -2265,10 +2474,7 @@ class PadV2Creator : public OpCreator {
         std::get<3>(signature.field_tuple) = op::pad_v2::Const_val(scalar_map.at(idx_const_val));
     }
 
-    bool Check() final {
-        return slang::functional::check_signature(signature) &&
-               slang::functional::check_rule(signature);
-    }
+    bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         uint32_t rank = std::get<0>(signature.field_tuple).storage.shape.size();
         uint32_t* p_pad = (uint32_t*)std::get<2>(signature.field_tuple).storage.data.data();
@@ -2346,7 +2552,7 @@ class PreluCreator : public OpCreator {
 
         auto alpha_attr = tensor_map.at(idx_alpha).attr;
         if (alpha_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Alpha tensor as INPUT are not supported in Prelu" << std::endl;
+            std::cout << "Error: Alpha tensor as INPUT is not supported in Prelu" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::prelu::Input(tensor_map.at(idx_in));
@@ -2376,8 +2582,13 @@ class QuantizeCreator : public OpCreator {
         outputs_ = outputs;
         uint32_t idx_in = inputs[0];
         uint32_t idx_out = outputs[0];
-        std::get<0>(signature.field_tuple) = op::simple_op::Input(tensor_map.at(idx_in));
-        std::get<1>(signature.field_tuple) = op::simple_op::Output(tensor_map.at(idx_out));
+        auto q_type = tensor_map.at(idx_out).qtype;
+        if (q_type == slang::type::quant_type::kSYMM_PCQ) {
+            std::cout << "Error: Quantize not support perchannel channel quantize" << std::endl;
+            support_state_ = false;
+        }
+        std::get<0>(signature.field_tuple) = op::quantize::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::quantize::Output(tensor_map.at(idx_out));
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2386,7 +2597,7 @@ class QuantizeCreator : public OpCreator {
     }
 
    private:
-    op::simple_op::signature signature;
+    op::quantize::signature signature;
 };
 
 class ReduceAllCreator : public OpCreator {
@@ -2407,7 +2618,7 @@ class ReduceAllCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceAll" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceAll" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::reduce_all_any::Input(tensor_map.at(idx_in));
@@ -2455,7 +2666,7 @@ class ReduceAnyCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceAny" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceAny" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::reduce_all_any::Input(tensor_map.at(idx_in));
@@ -2503,7 +2714,7 @@ class ReduceMaxCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceMax" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceMax" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) =
@@ -2555,7 +2766,7 @@ class ReduceMinCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceMin" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceMin" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) =
@@ -2607,7 +2818,7 @@ class ReduceProdCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceProd" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceProd" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) =
@@ -2659,7 +2870,7 @@ class ReduceSumCreator : public OpCreator {
 
         auto axis_attr = tensor_map.at(idx_axis).attr;
         if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Axis tensor as INPUT are not supported in ReduceSum" << std::endl;
+            std::cout << "Error: Axis tensor as INPUT is not supported in ReduceSum" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) =
@@ -2708,8 +2919,6 @@ class ReluCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2736,7 +2945,6 @@ class Relu1Creator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2763,7 +2971,6 @@ class Relu6Creator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) = op::activation::Alpha(0);
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -2792,7 +2999,7 @@ class ReshapeCreator : public OpCreator {
 
         auto shape_attr = tensor_map.at(idx_shape).attr;
         if (shape_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Shape tensor as INPUT are not supported in Reshape" << std::endl;
+            std::cout << "Error: Shape tensor as INPUT is not supported in Reshape" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::reshape::Input(tensor_map.at(idx_in));
@@ -2810,9 +3017,10 @@ class ReshapeCreator : public OpCreator {
         std::vector<uint32_t> no_negative_shape;
         uint32_t total_size = 1, negative_index = 0;
         bool do_shape_inference = false;
+        auto input_shape = std::get<0>(signature.field_tuple).shape();
 
-        for (uint32_t i = 0; i < shape_tensor.shape().size(); ++i) {
-            total_size *= shape_tensor.shape().at(i);
+        for (uint32_t i = 0; i < input_shape.size(); ++i) {
+            total_size *= input_shape.data()[i];
         }
         for (uint32_t i = 0; i < shape.size(); ++i) {
             if (shape.at(i) != -1) {
@@ -2854,18 +3062,18 @@ class ResizeBilinearCreator : public OpCreator {
         bool layout = false;
         bool align_corners = false;
         bool half_pixel_centers = false;
-        int output_width = 0, output_height = 0;
+        int32_t output_width = 0, output_height = 0;
         float factor_width = 0, factor_height = 0;
         if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kINT32) {
-            std::get<4>(signature.field_tuple) = op::resize::Factor(0);
-            auto* p_output_width = scalar_map.at(inputs[1]).data.data();
-            auto* p_output_height = scalar_map.at(inputs[2]).data.data();
+            std::get<4>(signature.field_tuple) = op::resize::Factor(0.0f);
+            auto p_output_width = scalar_map.at(inputs[1]).data.data();
+            auto p_output_height = scalar_map.at(inputs[2]).data.data();
             output_width = *(int32_t*)p_output_width;
             output_height = *(int32_t*)p_output_height;
         } else {
             std::get<4>(signature.field_tuple) = op::resize::Factor(scalar_map.at(inputs[1]));
-            auto* p_factor_width = scalar_map.at(inputs[1]).data.data();
-            auto* p_factor_height = scalar_map.at(inputs[2]).data.data();
+            auto p_factor_width = scalar_map.at(inputs[1]).data.data();
+            auto p_factor_height = scalar_map.at(inputs[2]).data.data();
             if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kFP16) {
                 factor_width = *(_Float16*)p_factor_width;
                 factor_height = *(_Float16*)p_factor_height;
@@ -2882,14 +3090,14 @@ class ResizeBilinearCreator : public OpCreator {
         }
         if (inputs.size() > 3) {
             uint32_t idx_layout = inputs[3];
-            auto* p_layout = scalar_map.at(idx_layout).data.data();
+            auto p_layout = scalar_map.at(idx_layout).data.data();
             layout = *(bool*)p_layout;
         }
         if (inputs.size() == 6) {
             uint32_t idx_align_corners = inputs[4];
             uint32_t idx_half_pixel_centers = inputs[5];
-            auto* p_align_corners = scalar_map.at(idx_align_corners).data.data();
-            auto* p_half_pixel_centers = scalar_map.at(idx_half_pixel_centers).data.data();
+            auto p_align_corners = scalar_map.at(idx_align_corners).data.data();
+            auto p_half_pixel_centers = scalar_map.at(idx_half_pixel_centers).data.data();
             align_corners = *(bool*)p_align_corners;
             half_pixel_centers = *(bool*)p_half_pixel_centers;
         }
@@ -2950,7 +3158,7 @@ class ResizeNearestCreator : public OpCreator {
         bool layout = false;
         bool align_corners = false;
         bool half_pixel_centers = false;
-        int output_width = 0, output_height = 0;
+        int32_t output_width = 0, output_height = 0;
         float factor_width = 0, factor_height = 0;
         if (scalar_map.at(inputs[1]).dtype == slang::type::data_type::kINT32) {
             std::get<4>(signature.field_tuple) = op::resize::Factor(0.0f);
@@ -3028,6 +3236,47 @@ class ResizeNearestCreator : public OpCreator {
     op::resize::signature signature;
 };
 
+class ReverseCreator : public OpCreator {
+   public:
+    ReverseCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 2 || outputs.size() != 1) {
+            std::cout << "Error: Reverse gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_REVERSE;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_axis = inputs[1];
+        uint32_t idx_out = outputs[0];
+
+        auto axis_attr = tensor_map.at(idx_axis).attr;
+        if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: Axis tensor as INPUT is not supported in Reverse" << std::endl;
+            support_state_ = false;
+        }
+        auto p_axis = tensor_map.at(idx_axis).data;
+        auto axis_android = *(int32_t*)p_axis;
+        int32_t axis_vx = ConvertAxis(axis_android, tensor_map.at(idx_in).shape.size());
+
+        std::get<0>(signature.field_tuple) = op::reverse::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::reverse::Output(tensor_map.at(idx_out));
+        std::get<2>(signature.field_tuple) = op::reverse::Axis(axis_vx);
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        auto p_axis = std::get<2>(signature.field_tuple).storage.data.data();
+        int32_t axis_vx = *(int32_t*)p_axis;
+        std::vector<int> axis{axis_vx};
+        return graph->CreateOperation<tim::vx::ops::Reverse>(axis);
+    }
+
+   private:
+    op::reverse::signature signature;
+};
+
 class RoiAlignCreator : public OpCreator {
    public:
     RoiAlignCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
@@ -3052,7 +3301,8 @@ class RoiAlignCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::roi_align::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::roi_align::Regions(tensor_map.at(idx_regions));
-        std::get<2>(signature.field_tuple) = op::roi_align::BatchIndex(tensor_map.at(idx_batch_index));
+        std::get<2>(signature.field_tuple) =
+                op::roi_align::BatchIndex(tensor_map.at(idx_batch_index));
         std::get<3>(signature.field_tuple) = op::roi_align::Output(tensor_map.at(idx_out));
         std::get<4>(signature.field_tuple) = op::roi_align::OutputHeight(scalar_map.at(idx_out_h));
         std::get<5>(signature.field_tuple) = op::roi_align::OutputWidth(scalar_map.at(idx_out_w));
@@ -3093,6 +3343,95 @@ class RoiAlignCreator : public OpCreator {
 
    private:
     op::roi_align::signature signature;
+};
+
+class RoiPoolingCreator : public OpCreator {
+   public:
+    RoiPoolingCreator(const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs,
+                      const TensorMap& tensor_map, const ScalarMap& scalar_map) {
+        if (inputs.size() != 8 || outputs.size() != 1) {
+            std::cout << "Error: RoiPooling gets invalid number of operands" << std::endl;
+            support_state_ = false;
+        }
+        type_ = ANEURALNETWORKS_ROI_POOLING;
+        inputs_ = inputs;
+        outputs_ = outputs;
+        uint32_t idx_in = inputs[0];
+        uint32_t idx_regions = inputs[1];
+        uint32_t idx_batch_index = inputs[2];
+        uint32_t idx_out_h = inputs[3];
+        uint32_t idx_out_w = inputs[4];
+        uint32_t idx_h_ratio = inputs[5];
+        uint32_t idx_w_ratio = inputs[6];
+        uint32_t idx_layout = inputs[7];
+        uint32_t idx_out = outputs[0];
+        auto p_h_ratio = scalar_map.at(idx_h_ratio).data.data();
+        auto p_w_ratio = scalar_map.at(idx_w_ratio).data.data();
+        auto input_type = tensor_map.at(idx_in).dtype;
+        float h_ratio, w_ratio;
+        if (input_type == slang::type::data_type::kFP16) {
+            h_ratio = *(_Float16*)p_h_ratio;
+            w_ratio = *(_Float16*)p_w_ratio;
+            if (h_ratio != w_ratio) {
+                std::cout << "Error: h_ratio & w_ratio must be same in RoiPooling" << std::endl;
+                support_state_ = false;
+            }
+        } else {
+            h_ratio = *(float*)p_h_ratio;
+            w_ratio = *(float*)p_w_ratio;
+            if (h_ratio != w_ratio) {
+                std::cout << "Error: h_ratio & w_ratio must be same in RoiPooling" << std::endl;
+                support_state_ = false;
+            }
+        }
+        auto attr = tensor_map.at(idx_batch_index).attr;
+        if (attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: batch_index as INPUT is not support in RoiPooling" << std::endl;
+            support_state_ = false;
+        } else {
+            auto data = tensor_map.at(idx_batch_index).data;
+            auto length = tensor_map.at(idx_batch_index).data_length / 4;
+            for (int i = 0; i < length; ++i) {
+                if (*((int32_t*)data + i) != 0) {
+                    std::cout << "Error: batch_index mush be zero in RoiPooling" << std::endl;
+                    support_state_ = false;
+                }
+            }
+        }
+        std::get<0>(signature.field_tuple) = op::roi_pooling::Input(tensor_map.at(idx_in));
+        std::get<1>(signature.field_tuple) = op::roi_pooling::Regions(tensor_map.at(idx_regions));
+        std::get<2>(signature.field_tuple) =
+                op::roi_pooling::BatchIndex(tensor_map.at(idx_batch_index));
+        std::get<3>(signature.field_tuple) = op::roi_pooling::Output(tensor_map.at(idx_out));
+        std::get<4>(signature.field_tuple) =
+                op::roi_pooling::OutputHeight(scalar_map.at(idx_out_h));
+        std::get<5>(signature.field_tuple) = op::roi_pooling::OutputWidth(scalar_map.at(idx_out_w));
+        std::get<6>(signature.field_tuple) = op::roi_pooling::Scale(scalar_map.at(idx_h_ratio));
+        std::get<7>(signature.field_tuple) = op::roi_pooling::Layout(scalar_map.at(idx_layout));
+    }
+
+    bool Check() final { return slang::functional::check_signature(signature); }
+    std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
+        uint8_t* p_out_height = std::get<4>(signature.field_tuple).storage.data.data();
+        uint8_t* p_out_width = std::get<5>(signature.field_tuple).storage.data.data();
+        uint8_t* p_scale = std::get<6>(signature.field_tuple).storage.data.data();
+        uint8_t* p_layout = std::get<7>(signature.field_tuple).storage.data.data();
+        auto out_w = *(uint32_t*)p_out_width;
+        auto out_h = *(uint32_t*)p_out_height;
+        std::array<uint32_t, 2> size{out_w, out_h};
+        auto layout = AndroidLayoutToVsiLayout(*(bool*)p_layout);
+        auto datatype = std::get<0>(signature.field_tuple).storage.dtype;
+        if (datatype == slang::type::data_type::kFP16) {
+            return graph->CreateOperation<tim::vx::ops::RoiPool>(tim::vx::PoolType::MAX,
+                                                                 *(_Float16*)p_scale, size, layout);
+        } else {
+            return graph->CreateOperation<tim::vx::ops::RoiPool>(tim::vx::PoolType::MAX,
+                                                                 *(float*)p_scale, size, layout);
+        }
+    }
+
+   private:
+    op::roi_pooling::signature signature;
 };
 
 class RsqrtCreator : public OpCreator {
@@ -3194,12 +3533,12 @@ class SliceCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         auto begin_attr = tensor_map.at(idx_begin).attr;
         if (begin_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Begin tensor as INPUT are not supported in Slice" << std::endl;
+            std::cout << "Error: Begin tensor as INPUT is not supported in Slice" << std::endl;
             support_state_ = false;
         }
         auto size_attr = tensor_map.at(idx_size).attr;
         if (size_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Size tensor as INPUT are not supported in Slice" << std::endl;
+            std::cout << "Error: Size tensor as INPUT is not supported in Slice" << std::endl;
             support_state_ = false;
         }
         std::get<0>(signature.field_tuple) = op::slice::Input(tensor_map.at(idx_in));
@@ -3240,13 +3579,6 @@ class SpaceToDepthCreator : public OpCreator {
         uint32_t idx_block_size = inputs[1];
         uint32_t idx_layout;
         uint32_t idx_out = outputs[0];
-        FUNC_LINE;
-        auto block_size_attr = tensor_map.at(idx_block_size).attr;
-        if (block_size_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: BlockSize tensor as INPUT are not supported in SpaceToDepth"
-                      << std::endl;
-            support_state_ = false;
-        }
 
         bool layout = false;
         if (inputs.size() == 3) {
@@ -3293,10 +3625,13 @@ class SpaceToBatchCreator : public OpCreator {
 
         auto block_size_attr = tensor_map.at(idx_block_size).attr;
         auto pad_attr = tensor_map.at(idx_pad).attr;
-        if (block_size_attr != slang::type::tensor_attr::kCONSTANT ||
-            pad_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: BlockSize & pad tensor as INPUT are not supported in SpaceToBatch"
+        if (block_size_attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: BlockSize tensor as INPUT is not supported in SpaceToBatch"
                       << std::endl;
+            support_state_ = false;
+        }
+        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
+            std::cout << "Error: Pad tensor as INPUT is not supported in SpaceToBatch" << std::endl;
             support_state_ = false;
         }
         const void* p_block_size = tensor_map.at(idx_block_size).data;
@@ -3357,13 +3692,13 @@ class SplitCreator : public OpCreator {
         const uint32_t rank = tensor_map.at(idx_in).shape.size();
         auto p_axis = scalar_map.at(idx_axis).data.data();
         const uint8_t* p_num_splits = scalar_map.at(idx_num_splits).data.data();
-        int axis = *(int32_t*)p_axis;
-        int num_splits = *(int32_t*)p_num_splits;
-        int axis_vx = ConvertAxis(axis, rank);
+        int32_t axis = *(int32_t*)p_axis;
+        int32_t num_splits = *(int32_t*)p_num_splits;
+        int32_t axis_vx = ConvertAxis(axis, rank);
 
         auto& input_shape = tensor_map.at(idx_in).shape;
         axis = axis < 0 ? axis + rank : axis;
-        int dim_value = input_shape[axis];
+        int32_t dim_value = input_shape[axis];
         if (dim_value % num_splits != 0) {
             std::cout << "Error: The number of splits can not evenly divide axis size."
                       << std::endl;
@@ -3371,7 +3706,7 @@ class SplitCreator : public OpCreator {
         }
         uint32_t slice_length = dim_value / num_splits;
         std::vector<uint32_t> slices(num_splits, slice_length);
-        PrintVector(slices);
+
         std::get<0>(signature.field_tuple) = op::split::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::split::Output(tensor_map.at(idx_out));
         std::get<2>(signature.field_tuple) = op::split::Axis(axis_vx);
@@ -3383,7 +3718,7 @@ class SplitCreator : public OpCreator {
         auto p_axis = std::get<2>(signature.field_tuple).storage.data.data();
         auto p_slices = std::get<3>(signature.field_tuple).storage.data.data();
         auto slices_length = std::get<3>(signature.field_tuple).storage.data.size() / 4;
-        int axis = *(int32_t*)p_axis;
+        int32_t axis = *(int32_t*)p_axis;
         std::vector<uint32_t> slices((int32_t*)p_slices, (int32_t*)p_slices + slices_length);
         return graph->CreateOperation<tim::vx::ops::Split>(axis, slices);
     }
@@ -3412,8 +3747,7 @@ class SqueezeCreator : public OpCreator {
             idx_axis = inputs[1];
             auto axis_attr = tensor_map.at(idx_axis).attr;
             if (axis_attr != slang::type::tensor_attr::kCONSTANT) {
-                std::cout << "Error: Axis tensor as INPUT are not supported in Squeeze"
-                          << std::endl;
+                std::cout << "Error: Axis tensor as INPUT is not supported in Squeeze" << std::endl;
                 support_state_ = false;
             }
             const void* p_axis = tensor_map.at(idx_axis).data;
@@ -3421,7 +3755,7 @@ class SqueezeCreator : public OpCreator {
             axis_android.assign((int32_t*)p_axis, (int32_t*)p_axis + axis_length);
             for (int i = 0; i < axis_android.size(); ++i) {
                 if (input_shape[axis_android[i]] != 1) {
-                    std::cout << "Error: squeezing a dimension that is not 1." << std::endl;
+                    std::cout << "Error: Squeezing a dimension that is not 1." << std::endl;
                     support_state_ = false;
                 }
             }
@@ -3553,17 +3887,16 @@ class StridedSliceCreator : public OpCreator {
         auto attr_end = tensor_map.at(idx_end).attr;
         auto attr_strides = tensor_map.at(idx_strides).attr;
         if (attr_begin != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Begin tensor as INPUT are not supported in StridedSlice"
+            std::cout << "Error: Begin tensor as INPUT is not supported in StridedSlice"
                       << std::endl;
             support_state_ = false;
         }
         if (attr_end != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: End tensor as INPUT are not supported in StridedSlice"
-                      << std::endl;
+            std::cout << "Error: End tensor as INPUT is not supported in StridedSlice" << std::endl;
             support_state_ = false;
         }
         if (attr_strides != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Strides tensor as INPUT are not supported in StridedSlice"
+            std::cout << "Error: Strides tensor as INPUT is not supported in StridedSlice"
                       << std::endl;
             support_state_ = false;
         }
@@ -3589,21 +3922,21 @@ class StridedSliceCreator : public OpCreator {
 
         const uint32_t input_rank = tensor_map.at(idx_in).shape.size();
         int32_t tmp = 0;
-        for (int32_t i = 0; i < input_rank; i++) {
+        for (int i = 0; i < input_rank; i++) {
             if (begin_mask & (1 << i)) {
                 tmp = tmp | (1 << (input_rank - i - 1));
             }
         }
         begin_mask = tmp;
         tmp = 0;
-        for (int32_t i = 0; i < input_rank; i++) {
+        for (int i = 0; i < input_rank; i++) {
             if (end_mask & (1 << i)) {
                 tmp = tmp | (1 << (input_rank - i - 1));
             }
         }
         end_mask = tmp;
         tmp = 0;
-        for (int32_t i = 0; i < input_rank; i++) {
+        for (int i = 0; i < input_rank; i++) {
             if (shrink_mask & (1 << i)) {
                 tmp = tmp | (1 << (input_rank - i - 1));
             }
@@ -3714,7 +4047,7 @@ class SvdfCreator : public OpCreator {
             }
         }
         auto& weight_shape = tensor_map.at(idx_weights_time).shape;
-        int num_units = weight_shape[0];
+        int32_t num_units = weight_shape[0];
         std::get<0>(signature.field_tuple) = op::svdf::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) =
                 op::svdf::WeightsFeature(tensor_map.at(idx_weights_feature));
@@ -3730,9 +4063,9 @@ class SvdfCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_rank = std::get<7>(signature.field_tuple).storage.data.data();
-        int rank = *(int32_t*)p_rank;
+        int32_t rank = *(int32_t*)p_rank;
         const uint8_t* p_num_units = std::get<8>(signature.field_tuple).storage.data.data();
-        int num_units = *(int32_t*)p_num_units;
+        int32_t num_units = *(int32_t*)p_num_units;
         return graph->CreateOperation<tim::vx::ops::Svdf>(rank, num_units, num_units);
     }
 
@@ -3755,8 +4088,6 @@ class TanhCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
         std::get<0>(signature.field_tuple) = op::activation::Input(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::activation::Output(tensor_map.at(idx_out));
-        std::get<2>(signature.field_tuple) =
-                op::activation::Alpha(0);  // Placeholder for OPTIONAL param
     }
 
     bool Check() final { return slang::functional::check_signature(signature); }
@@ -3784,11 +4115,11 @@ class TileCreator : public OpCreator {
         uint32_t idx_out = outputs[0];
 
         auto p_multiples = tensor_map.at(idx_multiples).data;
-        int multiples_length = tensor_map.at(idx_multiples).data_length / 4;
-        int rank = tensor_map.at(idx_in).shape.size();
+        int32_t multiples_length = tensor_map.at(idx_multiples).data_length / 4;
+        int32_t rank = tensor_map.at(idx_in).shape.size();
         auto multiples_attr = tensor_map.at(idx_multiples).attr;
         if (multiples_attr != slang::type::tensor_attr::kCONSTANT) {
-            std::cout << "Error: Multiples tensor as INPUT are not supported in Tile" << std::endl;
+            std::cout << "Error: Multiples tensor as INPUT is not supported in Tile" << std::endl;
             support_state_ = false;
         } else if (rank != multiples_length) {
             std::cout << "Error: The length of multiples length must equal to input rank in tile"
@@ -3807,7 +4138,7 @@ class TileCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_multiples = std::get<2>(signature.field_tuple).storage.data.data();
-        const int multiples_length = std::get<2>(signature.field_tuple).storage.data.size() / 4;
+        const int32_t multiples_length = std::get<2>(signature.field_tuple).storage.data.size() / 4;
         std::vector<int32_t> multiples((int32_t*)p_multiples,
                                        (int32_t*)p_multiples + multiples_length);
         return graph->CreateOperation<tim::vx::ops::Tile>(multiples);
@@ -3841,7 +4172,7 @@ class TopKCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_k = std::get<3>(signature.field_tuple).storage.data.data();
-        int k = *(int32_t*)p_k;
+        int32_t k = *(int32_t*)p_k;
         return graph->CreateOperation<tim::vx::ops::Topk>(k);
     }
 
@@ -3868,7 +4199,7 @@ class TransposeCreator : public OpCreator {
             idx_perm = inputs[1];
             auto perm_attr = tensor_map.at(idx_perm).attr;
             if (perm_attr != slang::type::tensor_attr::kCONSTANT) {
-                std::cout << "Error: Perm tensor as INPUT are not supported in Transpose"
+                std::cout << "Error: Perm tensor as INPUT is not supported in Transpose"
                           << std::endl;
                 support_state_ = false;
             }
@@ -3890,7 +4221,7 @@ class TransposeCreator : public OpCreator {
     bool Check() final { return slang::functional::check_signature(signature); }
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) final {
         const uint8_t* p_perm = std::get<2>(signature.field_tuple).storage.data.data();
-        const int data_length = std::get<2>(signature.field_tuple).storage.data.size() / 4;
+        const int32_t data_length = std::get<2>(signature.field_tuple).storage.data.size() / 4;
         std::vector<uint32_t> perm((uint32_t*)p_perm, (uint32_t*)p_perm + data_length);
         return graph->CreateOperation<tim::vx::ops::Transpose>(ConvertAndroidPermToVsi(perm));
     }
@@ -3920,10 +4251,15 @@ class TransposeConv2DCreator : public OpCreator {
         std::vector<int32_t> pad = {0, 0, 0, 0};
         std::vector<int32_t> stride = {0, 0};
         std::vector<int32_t> output_padding = {0, 0};
-        std::vector<int32_t> output_shape = {0, 0, 0, 0};
+        std::vector<int32_t> output_shape = {0, 0, 0, 0};  // whcn
         int32_t padding_code = 0;
         bool layout = false;  // default to CWHN(false), true implies WHCN.
 
+        auto bias_type = tensor_map.at(idx_bias).dtype;
+        if (bias_type == slang::type::data_type::kFP16) {
+            std::cout << "Error: F16 bias is not support in deconv" << std::endl;
+            support_state_ = false;
+        }
         if (inputs.size() == 9) {
             // implies implicit padding
             idx_output_shape = inputs[3];
@@ -3932,17 +4268,23 @@ class TransposeConv2DCreator : public OpCreator {
             idx_stride_height = inputs[6];
             idx_act = inputs[7];
             idx_layout = inputs[8];
-
             auto output_shape_attr = tensor_map.at(idx_output_shape).attr;
             if (output_shape_attr != slang::type::tensor_attr::kCONSTANT) {
-                std::cout << "Error: Output_shape tensor as INPUT are not supported in "
+                std::cout << "Error: Output_shape tensor as INPUT is not supported in "
                              "TransposeConv2D"
                           << std::endl;
                 support_state_ = false;
             }
+            const uint8_t* p_layout = scalar_map.at(idx_layout).data.data();
+            layout = *(bool*)p_layout;
             const void* p_output_shape = tensor_map.at(idx_output_shape).data;
-            output_shape = {*(int32_t*)p_output_shape, *((int32_t*)p_output_shape + 1),
-                            *((int32_t*)p_output_shape + 2), *((int32_t*)p_output_shape + 3)};
+            if (layout) {
+                output_shape = {*((int32_t*)p_output_shape + 3), *((int32_t*)p_output_shape + 2),
+                                *((int32_t*)p_output_shape + 1), *(int32_t*)p_output_shape};
+            } else {
+                output_shape = {*((int32_t*)p_output_shape + 2), *((int32_t*)p_output_shape + 1),
+                                *((int32_t*)p_output_shape + 3), *(int32_t*)p_output_shape};
+            }
             const uint8_t* p_code = scalar_map.at(idx_padding_code).data.data();
             padding_code = *(int32_t*)p_code;
         } else {
@@ -3956,14 +4298,14 @@ class TransposeConv2DCreator : public OpCreator {
             idx_act = inputs[9];
             idx_layout = inputs[10];
 
+            const uint8_t* p_layout = scalar_map.at(idx_layout).data.data();
+            layout = *(bool*)p_layout;
             const uint8_t* p_left = scalar_map.at(idx_pad_left).data.data();
             const uint8_t* p_right = scalar_map.at(idx_pad_right).data.data();
             const uint8_t* p_top = scalar_map.at(idx_pad_top).data.data();
             const uint8_t* p_bottom = scalar_map.at(idx_pad_bottom).data.data();
             pad = {*(int32_t*)p_left, *(int32_t*)p_right, *(int32_t*)p_top, *(int32_t*)p_bottom};
         }
-        const uint8_t* p_layout = scalar_map.at(idx_layout).data.data();
-        layout = *(bool*)p_layout;
         const uint8_t* p_stride_width = scalar_map.at(idx_stride_width).data.data();
         const uint8_t* p_stride_height = scalar_map.at(idx_stride_height).data.data();
         stride = {*(int32_t*)p_stride_width, *(int32_t*)p_stride_height};
@@ -4009,20 +4351,18 @@ class TransposeConv2DCreator : public OpCreator {
                                                 : std::get<0>(signature.field_tuple).shape()[2];
             uint32_t input_h = *(bool*)p_layout ? std::get<0>(signature.field_tuple).shape()[2]
                                                 : std::get<0>(signature.field_tuple).shape()[1];
-            uint32_t output_w = *(bool*)p_layout ? *((int32_t*)p_output_shape + 3)
-                                                 : *((int32_t*)p_output_shape + 2);
-            uint32_t output_h = *(bool*)p_layout ? *((int32_t*)p_output_shape + 2)
-                                                 : *((int32_t*)p_output_shape + 1);
+            uint32_t output_w = *(int32_t*)p_output_shape;
+            uint32_t output_h = *((int32_t*)p_output_shape + 1);
             uint32_t stride_w = stride[0];
             uint32_t stride_h = stride[1];
             int32_t pad_left_inter =
                     static_cast<int32_t>(ksize_w + stride_w * (input_w - 1) - output_w);
-            uint32_t pad_left = pad_left_inter > 0 ? pad_left_inter / 2 : 0;
-            uint32_t pad_right = pad_left_inter > 0 ? pad_left_inter - pad_left : 0;
+            uint32_t pad_left = pad_left_inter / 2;
+            uint32_t pad_right = pad_left_inter - pad_left;
             int32_t pad_top_inter =
                     static_cast<int32_t>(ksize_h + stride_h * (input_h - 1) - output_h);
-            uint32_t pad_top = pad_top_inter > 0 ? pad_top_inter / 2 : 0;
-            uint32_t pad_bottom = pad_top_inter > 0 ? pad_top_inter - pad_top : 0;
+            uint32_t pad_top = pad_top_inter / 2;
+            uint32_t pad_bottom = pad_top_inter - pad_top;
             pad = {pad_left, pad_right, pad_top, pad_bottom};
         } else {
             pad = {*((uint32_t*)p_pad), *((uint32_t*)p_pad + 1), *((uint32_t*)p_pad + 2),

@@ -46,7 +46,7 @@ class VsiDevice {
    private:
     const std::string name_;
     const std::string version_{"0.0.1"};
-    const int64_t feature_level_{31};
+    const int64_t feature_level_{1000006};
     std::shared_ptr<tim::vx::platform::IDevice> device_;
 };
 

@@ -1,100 +1,64 @@
 START_DEFINE_SIGNATURES()
 
-DEFINE_SIGNATURE(f32_f32_f32_f32,
+DEFINE_SIGNATURE(f32_f32_f32_f32_const,
                  TENSOR(Input, FP32, NO_QUANT),
                  TENSOR(Weight, FP32, NO_QUANT, CONSTANT),
                  TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
                  TENSOR(Output, FP32, NO_QUANT))
 
-DEFINE_SIGNATURE(f16_f16_f32_f16,
+DEFINE_SIGNATURE(f16_f16_f32_f16_const,
                  TENSOR(Input, FP16, NO_QUANT),
                  TENSOR(Weight, FP16, NO_QUANT, CONSTANT),
                  TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
                  TENSOR(Output, FP16, NO_QUANT))
 
-DEFINE_SIGNATURE(f16_f16_f16_f16,
+DEFINE_SIGNATURE(f16_f16_f16_f16_const,
                  TENSOR(Input, FP16, NO_QUANT),
                  TENSOR(Weight, FP16, NO_QUANT, CONSTANT),
                  TENSOR(Bias, FP16, NO_QUANT, CONSTANT),
                  TENSOR(Output, FP16, NO_QUANT))
 
-DEFINE_SIGNATURE(f16_f16_f32_bf16,
-                 TENSOR(Input, FP16, NO_QUANT),
-                 TENSOR(Weight, FP16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
-                 TENSOR(Output, BF16, NO_QUANT))
+DEFINE_SIGNATURE(u8asym_u8asym_i32asym_u8asym_const,
+                 TENSOR(Input, UINT8, ASYMM),
+                 TENSOR(Weight, UINT8, ASYMM, CONSTANT),
+                 TENSOR(Bias, INT32, NO_QUANT, CONSTANT),
+                 TENSOR(Output, UINT8, ASYMM))
 
-DEFINE_SIGNATURE(f16_f16_f32_f32,
-                 TENSOR(Input, FP16, NO_QUANT),
-                 TENSOR(Weight, FP16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
+DEFINE_SIGNATURE(i8asym_i8asym_i32asym_i8asym_const,
+                 TENSOR(Input, INT8, ASYMM),
+                 TENSOR(Weight, INT8, ASYMM, CONSTANT),
+                 TENSOR(Bias, INT32, NO_QUANT, CONSTANT),
+                 TENSOR(Output, INT8, ASYMM))
+
+DEFINE_SIGNATURE(f32_f32_f32_f32,
+                 TENSOR(Input, FP32, NO_QUANT),
+                 TENSOR(Weight, FP32, NO_QUANT),
+                 TENSOR(Bias, FP32, NO_QUANT),
                  TENSOR(Output, FP32, NO_QUANT))
 
-DEFINE_SIGNATURE(bf16_bf16_bf16_f16,
-                 TENSOR(Input, BF16, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, BF16, NO_QUANT, CONSTANT),
+DEFINE_SIGNATURE(f16_f16_f32_f16,
+                 TENSOR(Input, FP16, NO_QUANT),
+                 TENSOR(Weight, FP16, NO_QUANT),
+                 TENSOR(Bias, FP32, NO_QUANT),
                  TENSOR(Output, FP16, NO_QUANT))
 
-DEFINE_SIGNATURE(bf16_bf16_bf16_bf16,
-                 TENSOR(Input, BF16, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Output, BF16, NO_QUANT))
-
-DEFINE_SIGNATURE(bf16_bf16_bf16_f32,
-                 TENSOR(Input, BF16, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(f32_bf16_f32_f16,
-                 TENSOR(Input, FP32, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
-                 TENSOR(Output, FP16, NO_QUANT))
-
-DEFINE_SIGNATURE(f32_bf16_f32_bf16,
-                 TENSOR(Input, FP32, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
-                 TENSOR(Output, BF16, NO_QUANT))
-
-DEFINE_SIGNATURE(f32_bf16_f32_f32,
-                 TENSOR(Input, FP32, NO_QUANT),
-                 TENSOR(Weight, BF16, NO_QUANT, CONSTANT),
-                 TENSOR(Bias, FP32, NO_QUANT, CONSTANT),
-                 TENSOR(Output, FP32, NO_QUANT))
-
-DEFINE_SIGNATURE(i8dfp_i8dfp_i8dfp_i8dfp,
-                 TENSOR(Input, INT8, DFP),
-                 TENSOR(Weight, INT8, DFP, CONSTANT),
-                 TENSOR(Bias, INT8, DFP, CONSTANT),
-                 TENSOR(Output, INT8, DFP))
-
-DEFINE_SIGNATURE(i16dfp_i16dfp_i16dfp_i16dfp,
-                 TENSOR(Input, INT16, DFP),
-                 TENSOR(Weight, INT16, DFP, CONSTANT),
-                 TENSOR(Bias, INT16, DFP, CONSTANT),
-                 TENSOR(Output, INT16, DFP))
-
-DEFINE_SIGNATURE(i16dfp_i16dfp_i64dfp_f16,
-                 TENSOR(Input, INT16, DFP),
-                 TENSOR(Weight, INT16, DFP, CONSTANT),
-                 TENSOR(Bias, INT64, DFP, CONSTANT),
+DEFINE_SIGNATURE(f16_f16_f16_f16,
+                 TENSOR(Input, FP16, NO_QUANT),
+                 TENSOR(Weight, FP16, NO_QUANT),
+                 TENSOR(Bias, FP16, NO_QUANT),
                  TENSOR(Output, FP16, NO_QUANT))
 
 DEFINE_SIGNATURE(u8asym_u8asym_i32asym_u8asym,
                  TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Weight, UINT8, ASYMM, CONSTANT),
-                 TENSOR(Bias, INT32, ASYMM, CONSTANT),
+                 TENSOR(Weight, UINT8, ASYMM),
+                 TENSOR(Bias, INT32, NO_QUANT),
                  TENSOR(Output, UINT8, ASYMM))
 
-DEFINE_SIGNATURE(u8asym_u8asym_i32asym_i16dfp,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Weight, UINT8, ASYMM, CONSTANT),
-                 TENSOR(Bias, INT32, ASYMM, CONSTANT),
-                 TENSOR(Output, INT16, DFP))
+DEFINE_SIGNATURE(i8asym_i8asym_i32asym_i8asym,
+                 TENSOR(Input, INT8, ASYMM),
+                 TENSOR(Weight, INT8, ASYMM),
+                 TENSOR(Bias, INT32, NO_QUANT),
+                 TENSOR(Output, INT8, ASYMM))
 
 DEFINE_SIGNATURE(u8asym_u8asym_i32asym_f16,
                  TENSOR(Input, UINT8, ASYMM),
@@ -398,22 +362,16 @@ DEFINE_SIGNATURE(i8asym_u8asym_i32asym_f32,
                  TENSOR(Output, FP32, NO_QUANT))
 
 
-ADD_SIGNATURE(f32_f32_f32_f32,
+ADD_SIGNATURE(f32_f32_f32_f32_const,
+              f16_f16_f32_f16_const,
+              f16_f16_f16_f16_const,
+              u8asym_u8asym_i32asym_u8asym_const,
+              i8asym_i8asym_i32asym_i8asym_const,
+              f32_f32_f32_f32,
               f16_f16_f32_f16,
               f16_f16_f16_f16,
-              f16_f16_f32_bf16,
-              f16_f16_f32_f32,
-              bf16_bf16_bf16_f16,
-              bf16_bf16_bf16_bf16,
-              bf16_bf16_bf16_f32,
-              f32_bf16_f32_f16,
-              f32_bf16_f32_bf16,
-              f32_bf16_f32_f32,
-              i8dfp_i8dfp_i8dfp_i8dfp,
-              i16dfp_i16dfp_i16dfp_i16dfp,
-              i16dfp_i16dfp_i64dfp_f16,
               u8asym_u8asym_i32asym_u8asym,
-              u8asym_u8asym_i32asym_i16dfp,
+              i8asym_i8asym_i32asym_i8asym,
               u8asym_u8asym_i32asym_f16,
               u8asym_u8pcq_i32pcq_u8asym,
               u8asym_u8asym_i32asym_i8dfp,

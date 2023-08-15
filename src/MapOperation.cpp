@@ -106,6 +106,36 @@ int MapOneInputOneOutput(std::shared_ptr<tim::vx::Graph> graph,
     return ANEURALNETWORKS_NO_ERROR;
 }
 
+int MapBatchMatmul(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+                   std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                   const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                   const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+    uint32_t idx_in = inputs[0];
+    uint32_t idx_in2 = inputs[1];
+    uint32_t idx_out = outputs[0];
+
+    if (!vx_tensors.count(idx_in)) {
+        vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
+    }
+    if (!vx_tensors.count(idx_in2)) {
+        vx_tensors.insert({idx_in2, CreateTvxTensor(graph, tensor_map.at(idx_in2))});
+    }
+    if (!vx_tensors.count(idx_out)) {
+        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
+    }  // If not graph input/output, create const or transient tensor
+
+    auto input = vx_tensors[idx_in];
+    auto input2 = vx_tensors[idx_in2];
+    auto output = vx_tensors[idx_out];
+
+    auto op = op_creator->Lowering(graph);
+    op->BindInput(input);
+    op->BindInput(input2);
+    op->BindOutput(output);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
 int MapConcatenation(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                      std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                      const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -588,6 +618,33 @@ int MapLogicalAndOr(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
     return ANEURALNETWORKS_NO_ERROR;
 }
 
+int MapPack(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+            std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+            const TensorMap& tensor_map, const ScalarMap& scalar_map,
+            const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+    int32_t inputs_num = inputs.size();
+    uint32_t idx_out = outputs[0];
+    std::vector<std::shared_ptr<tim::vx::Tensor>> inputs_tensors;
+    for(int i = 1; i<inputs_num; ++i) {
+        uint32_t idx_in = inputs[i];
+        if (!vx_tensors.count(idx_in)) {
+            vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
+        }
+        inputs_tensors.push_back(vx_tensors[idx_in]);
+    }
+    if (!vx_tensors.count(idx_out)) {
+        vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
+    }
+
+    auto output = vx_tensors[idx_out];
+
+    auto pack = op_creator->Lowering(graph);
+    pack->BindInputs(inputs_tensors);
+    pack->BindOutput(output);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
 int MapPool2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
               std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
               const TensorMap& tensor_map, const ScalarMap& scalar_map,
@@ -676,7 +733,7 @@ int MapRelationalOp(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapRoiAlign(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+int MapRoi(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
                     std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
                     const TensorMap& tensor_map, const ScalarMap& scalar_map,
                     const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
@@ -702,8 +759,7 @@ int MapRoiAlign(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator
     auto regions = vx_tensors[idx_regions];
     auto batch_index = vx_tensors[idx_batch_index];
     auto output = vx_tensors[idx_out];
-//     FUNC_LINE;
-// PrintVXSpec(batch_index->GetSpec());
+
     auto roi_align = op_creator->Lowering(graph);
     roi_align->BindInput(input);
     roi_align->BindInput(regions);

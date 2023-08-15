@@ -5,9 +5,8 @@ BEGIN_SPEC(activation)
 
 DECLARE_TENSOR_PARAM(Input, REQUIRED)
 DECLARE_TENSOR_PARAM(Output, REQUIRED)
-DECLARE_SCALAR_PARAM(Alpha, OPTIONAL)
 
-DECLARE_SIGNATURE(Input, Output, Alpha)
+DECLARE_SIGNATURE(Input, Output)
 
 #include "signature.slang.h"
 #include "rule.slang.h"

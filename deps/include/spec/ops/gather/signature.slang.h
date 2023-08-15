@@ -12,6 +12,12 @@ DEFINE_SIGNATURE(f16_f16,
                  TENSOR(Output, FP16, NO_QUANT),
                  SCALAR(Axis, INT32))
 
+DEFINE_SIGNATURE(i32_i32,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Indices, INT32, NO_QUANT),
+                 TENSOR(Output, INT32, NO_QUANT),
+                 SCALAR(Axis, INT32))
+
 DEFINE_SIGNATURE(u8asym_u8asym,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Indices, INT32, NO_QUANT),
@@ -36,6 +42,12 @@ DEFINE_SIGNATURE(f16_f16_const,
                  TENSOR(Output, FP16, NO_QUANT),
                  SCALAR(Axis, INT32))
 
+DEFINE_SIGNATURE(i32_i32_const,
+                 TENSOR(Input, INT32, NO_QUANT),
+                 TENSOR(Indices, INT32, NO_QUANT, CONSTANT),
+                 TENSOR(Output, INT32, NO_QUANT),
+                 SCALAR(Axis, INT32))
+
 DEFINE_SIGNATURE(u8asym_u8asym_const,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Indices, INT32, NO_QUANT, CONSTANT),
@@ -51,9 +63,11 @@ DEFINE_SIGNATURE(i8asym_i8asym_const,
 
 ADD_SIGNATURE(f32_f32,
               f16_f16,
+              i32_i32,
               u8asym_u8asym,
               i8asym_i8asym,
               f32_f32_const,
               f16_f16_const,
+              i32_i32_const,
               u8asym_u8asym_const,
               i8asym_i8asym_const)

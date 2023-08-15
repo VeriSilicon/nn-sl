@@ -52,37 +52,13 @@ DEFINE_SIGNATURE(u8asymm_i8asymm,
                  TENSOR(Input, UINT8, ASYMM),
                  TENSOR(Output, INT8, ASYMM))
 
-DEFINE_SIGNATURE(u4asymm_u8asymm,
-                 TENSOR(Input, UINT4, ASYMM),
-                 TENSOR(Output, UINT8, ASYMM))
+DEFINE_SIGNATURE(i8pcq_f32,
+                 TENSOR(Input, INT8, SYMM_PCQ),
+                 TENSOR(Output, FP32, NO_QUANT))
 
-DEFINE_SIGNATURE(u4symm_u8asymm,
-                 TENSOR(Input, UINT4, SYMM),
-                 TENSOR(Output, UINT8, ASYMM))
-
-DEFINE_SIGNATURE(u8asymm_u4asymm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, UINT4, ASYMM))
-
-DEFINE_SIGNATURE(u8asymm_u4symm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, UINT4, SYMM))
-
-DEFINE_SIGNATURE(i4asymm_u8asymm,
-                 TENSOR(Input, INT4, ASYMM),
-                 TENSOR(Output, UINT8, ASYMM))
-
-DEFINE_SIGNATURE(i4symm_u8asymm,
-                 TENSOR(Input, INT4, SYMM),
-                 TENSOR(Output, UINT8, ASYMM))
-
-DEFINE_SIGNATURE(u8asymm_i4asymm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT4, ASYMM))
-
-DEFINE_SIGNATURE(u8asymm_i4symm,
-                 TENSOR(Input, UINT8, ASYMM),
-                 TENSOR(Output, INT4, SYMM))
+DEFINE_SIGNATURE(i8pcq_f16,
+                 TENSOR(Input, INT8, SYMM_PCQ),
+                 TENSOR(Output, FP16, NO_QUANT))
 
 ADD_SIGNATURE(u8asym_f32,
               u8sym_f32,
@@ -97,11 +73,5 @@ ADD_SIGNATURE(u8asym_f32,
               i8asymm_u8asymm,
               u8asymm_u8asymm,
               u8asymm_i8asymm,
-              u4asymm_u8asymm,
-              u4symm_u8asymm,
-              u8asymm_u4asymm,
-              u8asymm_u4symm,
-              i4asymm_u8asymm,
-              i4symm_u8asymm,
-              u8asymm_i4asymm,
-              u8asymm_i4symm)
+              i8pcq_f32,
+              i8pcq_f16)

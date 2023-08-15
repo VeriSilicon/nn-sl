@@ -98,7 +98,13 @@ int ANeuralNetworksDevice_getFeatureLevel(const ANeuralNetworksDevice* device,
                                           int64_t* featureLevel) {
     __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
                         "=====ANeuralNetworksDevice_getFeatureLevel is called ");
-
+    if (device == nullptr) {
+        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
+                            "ANeuralNetworksDevice_getFeatureLevel passed a nullptr");
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
+    *featureLevel = d->GetFeatureLevel();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
@@ -664,7 +670,7 @@ int64_t ANeuralNetworks_getRuntimeFeatureLevel() {
     __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
                         "=====ANeuralNetworks_getRuntimeFeatureLevel is called ");
 
-    return ANEURALNETWORKS_FEATURE_LEVEL_5;
+    return ANEURALNETWORKS_FEATURE_LEVEL_7;
 }
 
 int ANeuralNetworksExecution_enableInputAndOutputPadding(ANeuralNetworksExecution* execution,
@@ -788,8 +794,8 @@ int SL_ANeuralNetworksDevice_forEachVendorExtensionOperandTypeInformation(
 
 #define NNCL_FUNC(symbol) .symbol = symbol
 
-NnApiSLDriverImplFL5 slDriverImpl{
-        .base{.implFeatureLevel = ANEURALNETWORKS_FEATURE_LEVEL_5},
+NnApiSLDriverImplFL7 slDriverImpl{
+        .base{.implFeatureLevel = ANEURALNETWORKS_FEATURE_LEVEL_7},
         NNCL_FUNC(ANeuralNetworksBurst_create),
         NNCL_FUNC(ANeuralNetworksBurst_free),
         NNCL_FUNC(ANeuralNetworksCompilation_createForDevices),
