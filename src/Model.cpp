@@ -26,7 +26,6 @@
 #include <cassert>
 #include <cstring>
 
-#include "Memory.h"
 #include "Utils.h"
 
 namespace vsi {
@@ -143,10 +142,19 @@ int Model::SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t
                   << " exceeds max size" << std::endl;
         return ANEURALNETWORKS_BAD_DATA;
     }
-    if (memory == nullptr) return ANEURALNETWORKS_BAD_DATA;
+    if (memory == nullptr) {
+        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get a null memory"
+                  << std::endl;
+        return ANEURALNETWORKS_BAD_DATA;
+    }
 
     if (tensors_.find(index) != tensors_.end()) {
         tensors_[index].attr = slang::type::tensor_attr::kCONSTANT;
+        if (memory->IsCreateFromAHWB()) {
+            auto mem = const_cast<Memory*>(memory);
+            auto status = mem->PraseAHWB(mem->AHWB());
+            if (status != ANEURALNETWORKS_NO_ERROR) return status;
+        }
         tensors_[index].data = (uint8_t*)memory->Data() + offset;
         tensors_[index].data_length = length;
     } else {
@@ -504,8 +512,7 @@ int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
                     std::vector<uint32_t>(inputs, inputs + inputCount),
                     std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
             break;
-        // roi_pooling not support at present
-        // case ANEURALNETWORKS_ROI_POOLING:
+        // case ANEURALNETWORKS_ROI_POOLING:  // roi_pooling not support at present
         //     op_creators_.push_back(std::make_shared<RoiPoolingCreator>(
         //             std::vector<uint32_t>(inputs, inputs + inputCount),
         //             std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
@@ -617,6 +624,23 @@ int Model::IdentifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs,
     }
     inputs_ = std::vector<uint32_t>(inputs, inputs + inputCount);
     outputs_ = std::vector<uint32_t>(outputs, outputs + outputCount);
+    // for (uint32_t in : inputs_) {
+    //     auto in_shape = tensors_[in].shape;
+    //     bool no_zero = std::all_of(in_shape.begin(), in_shape.end(), [](int s) { return s != 0; });
+    //     if (!no_zero) {
+    //         std::cout << "Error: Can not support zero shape in input tensor" << std::endl;
+    //         return ANEURALNETWORKS_BAD_DATA;
+    //     }
+    // }
+    // for (uint32_t out : outputs_) {
+    //     auto out_shape = tensors_[out].shape;
+    //     bool no_zero =
+    //             std::all_of(out_shape.begin(), out_shape.end(), [](int s) { return s != 0; });
+    //     if (!no_zero) {
+    //         std::cout << "Error: Can not support zero shape in output tensor" << std::endl;
+    //         return ANEURALNETWORKS_BAD_DATA;
+    //     }
+    // }
     return ANEURALNETWORKS_NO_ERROR;
 }
 

@@ -61,6 +61,49 @@ std::shared_ptr<tim::vx::Tensor> Execution::CreateTvxIOTensor(
 
 int Execution::SetInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
                         size_t length) {
+    if (type != nullptr) {
+        Model* model = compilation_->GetModel();
+        int32_t input = model->Inputs()[index];
+        auto& tensors = model->Tensors();
+        auto& input_tensor = tensors[input];
+        if (input_tensor.dtype != MapDataType(type->type) || input_tensor.scale != type->scale ||
+            input_tensor.zero_point != type->zeroPoint) {
+            std::cout << "Get invalid ANeuralNetworksOperandType when setting input." << std::endl;
+            return ANEURALNETWORKS_BAD_DATA;
+        }
+        inputs_dimension_[index] =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        input_tensor.shape = inputs_dimension_[index];
+    }
+    Memory* mem = new Memory();  //this mem not hold data in memory, only hold data pointer
+    mem->SetData(const_cast<void*>(buffer));
+    mem->SetLength(length);
+    inputs_memory_[index] = IOMemory(mem, 0, length);
+    free(mem);
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::SetOutput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
+                        size_t length) {
+    if (type != nullptr) {
+        Model* model = compilation_->GetModel();
+        int32_t output = model->Outputs()[index];
+        auto& tensors = model->Tensors();
+        auto& output_tensor = tensors[output];
+        if (output_tensor.dtype != MapDataType(type->type) || output_tensor.scale != type->scale ||
+            output_tensor.zero_point != type->zeroPoint) {
+            std::cout << "Get invalid ANeuralNetworksOperandType when setting output." << std::endl;
+            return ANEURALNETWORKS_BAD_DATA;
+        }
+        outputs_dimension_[index] =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        output_tensor.shape = outputs_dimension_[index];
+    }
+    Memory* mem = new Memory();
+    mem->SetData(const_cast<void*>(buffer));
+    mem->SetLength(length);
+    outputs_memory_[index] = IOMemory(mem, 0, length);
+    free(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
@@ -244,8 +287,7 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
                 result = MapRoi(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
                                 outputs);
                 break;
-            // not support roi_pooling at present
-            // case ANEURALNETWORKS_ROI_POOLING:
+            // case ANEURALNETWORKS_ROI_POOLING:  // not support roi_pooling at present
             //     result = MapRoi(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
             //                     outputs);
             //     break;
@@ -298,6 +340,13 @@ int Execution::SetInputFromMemory(int32_t index, const ANeuralNetworksOperandTyp
                 std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
         input_tensor.shape = inputs_dimension_[index];
     }
+    auto mem = const_cast<Memory*>(memory);
+    if (mem->IsCreateFromAHWB()) {
+        mem->PraseAHWB(mem->AHWB());
+    }
+    if (mem->IsCreateFromDesc()) {
+        length = memory->Length();
+    }
     inputs_memory_[index] = IOMemory(memory, offset, length);
 
     return ANEURALNETWORKS_NO_ERROR;
@@ -318,6 +367,9 @@ int Execution::SetOutputFromMemory(int32_t index, const ANeuralNetworksOperandTy
         outputs_dimension_[index] =
                 std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
         output_tensor.shape = outputs_dimension_[index];
+    }
+    if (memory->IsCreateFromDesc()) {
+        length = memory->Length();
     }
     outputs_memory_[index] = IOMemory(memory, offset, length);
     return ANEURALNETWORKS_NO_ERROR;

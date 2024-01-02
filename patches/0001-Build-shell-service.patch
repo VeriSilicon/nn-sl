@@ -1,0 +1,56 @@
+From e0badafd4bf61c9bf43cbea7f8274b29fa9f91b2 Mon Sep 17 00:00:00 2001
+From: Xiaoran Weng <Xiaoran.Weng@verisilicon.com>
+Date: Mon, 11 Dec 2023 13:42:16 +0800
+Subject: [PATCH 1/2] Build shell service
+
+---
+ driver/sample_shim/Android.bp             | 9 +++++++++
+ driver/sample_shim/ShellServiceSample.cpp | 6 +++---
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/driver/sample_shim/Android.bp b/driver/sample_shim/Android.bp
+index b0659ec..7f073c4 100644
+--- a/driver/sample_shim/Android.bp
++++ b/driver/sample_shim/Android.bp
+@@ -119,3 +119,12 @@ cc_binary {
+     init_rc: ["config/android.hardware.neuralnetworks-shim-service-sample.rc"],
+     vintf_fragments: ["config/android.hardware.neuralnetworks-shim-service-sample.xml"],
+ }
++
++cc_binary {
++    name: "android.hardware.neuralnetworks-shell-service-sample",
++    srcs: ["ShellServiceSample.cpp"],
++    defaults: ["NeuralNetworksShimDriverAidl_server_defaults"],
++    stl: "libc++_static",
++    init_rc: ["config/android.hardware.neuralnetworks-shell-service-sample.rc"],
++    vintf_fragments: ["config/android.hardware.neuralnetworks-shell-service-sample.xml"],
++}
+diff --git a/driver/sample_shim/ShellServiceSample.cpp b/driver/sample_shim/ShellServiceSample.cpp
+index dcb2f9e..6ba98c5 100644
+--- a/driver/sample_shim/ShellServiceSample.cpp
++++ b/driver/sample_shim/ShellServiceSample.cpp
+@@ -95,7 +95,7 @@ int registerDevices(const std::string& driverPath, const std::vector<Names>& dev
+ 
+     // The default is 15, use more only if there's more devices exposed.
+     ANeuralNetworksShimRegistrationParams_setNumberOfListenerThreads(params, 15);
+-    ANeuralNetworksShimRegistrationParams_registerAsLazyService(params, /*asLazy=*/true);
++    ANeuralNetworksShimRegistrationParams_registerAsLazyService(params, /*asLazy=*/false);
+     ANeuralNetworksShimRegistrationParams_fallbackToMinimumSupportDevice(params, /*fallback=*/true);
+ 
+     for (const auto& device : devices) {
+@@ -123,10 +123,10 @@ using aidl::android::hardware::neuralnetworks::Names;
+ using aidl::android::hardware::neuralnetworks::registerDevices;
+ 
+ int main() {
+-    const std::string driverPath = "/vendor/lib64/neuralnetworks_sample_sl_driver_prebuilt.so";
++    const std::string driverPath = "/vendor/lib64/libVsiSupportLibrary.so";
+ 
+     const std::vector<Names> devicesToRegister = {
+-            {.driverName = "nnapi-sample_sl", .serviceName = "nnapi-sample_sl_updatable"},
++            {.driverName = "vsi-device-0", .serviceName = "nnapi-sample_sl_updatable"},
+     };
+ 
+     return registerDevices(driverPath, devicesToRegister);
+-- 
+2.34.1
+

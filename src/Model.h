@@ -26,7 +26,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "NeuralNetworksTypes.h"
+#include <android/NeuralNetworksTypes.h>
 #include "OpCreator.h"
 #include "Types.h"
 #include "tim/vx/tensor.h"

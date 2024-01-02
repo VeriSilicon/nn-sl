@@ -29,6 +29,8 @@
 #include <string>
 
 #include "tim/vx/platform/platform.h"
+#include <android/NeuralNetworksTypes.h>
+#include "Types.h"
 
 namespace vsi {
 namespace android {
@@ -42,12 +44,48 @@ class VsiDevice {
     const std::string& GetVersion() const { return version_; }
     const int64_t& GetFeatureLevel() const { return feature_level_; }
     std::shared_ptr<tim::vx::platform::IDevice> Device() const { return device_; }
+    const Capabilities& getCapabilities() const { return capabilities_; }
+    Capabilities createNpuCapabilities() {
+        constexpr Capabilities::PerformanceInfo PerfInfo = {.execTime = 0.1f, .powerUsage = 0.1f};
+        constexpr OperandType OperandsTypes[] = {
+                OperandType::FLOAT32,
+                OperandType::INT32,
+                OperandType::UINT32,
+                OperandType::TENSOR_FLOAT32,
+                OperandType::TENSOR_INT32,
+                OperandType::TENSOR_QUANT8_ASYMM,
+                OperandType::BOOL,
+                OperandType::TENSOR_QUANT16_SYMM,
+                OperandType::TENSOR_FLOAT16,
+                OperandType::TENSOR_BOOL8,
+                OperandType::FLOAT16,
+                OperandType::TENSOR_QUANT8_SYMM_PER_CHANNEL,
+                OperandType::TENSOR_QUANT16_ASYMM,
+                OperandType::TENSOR_QUANT8_SYMM,
+                OperandType::TENSOR_QUANT8_ASYMM_SIGNED,
+        };
+
+        std::vector<Capabilities::OperandPerformance> operandPerformance;
+        operandPerformance.reserve(std::size(OperandsTypes));
+        std::transform(std::begin(OperandsTypes), std::end(OperandsTypes),
+                       std::back_inserter(operandPerformance), [PerfInfo](OperandType op) {
+                           return Capabilities::OperandPerformance{.type = op, .info = PerfInfo};
+                       });
+        auto table = Capabilities::OperandPerformanceTable(operandPerformance);
+
+        return {.relaxedFloat32toFloat16PerformanceScalar = PerfInfo,
+                .relaxedFloat32toFloat16PerformanceTensor = PerfInfo,
+                .operandPerformance = table,
+                .ifPerformance = {.execTime = __FLT_MAX__, .powerUsage = __FLT_MAX__},
+                .whilePerformance = {.execTime = __FLT_MAX__, .powerUsage = __FLT_MAX__}};
+    }
 
    private:
     const std::string name_;
     const std::string version_{"0.0.1"};
-    const int64_t feature_level_{1000006};
+    const int64_t feature_level_{1000006}; //feature level 7
     std::shared_ptr<tim::vx::platform::IDevice> device_;
+    const Capabilities capabilities_ = createNpuCapabilities();
 };
 
 }  // namespace sl

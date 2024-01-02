@@ -21,56 +21,32 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
-#ifndef VSI_ANDROID_SL_COMPILATION_H
-#define VSI_ANDROID_SL_COMPILATION_H
-#include <memory>
-#include <unordered_map>
+#ifndef VSI_ANDROID_SL_EVENT_H
+#define VSI_ANDROID_SL_EVENT_H
 
-#include "Model.h"
-#include "VsiDevice.h"
-#include "slang/type_system.h"
-#include "tim/vx/ops.h"
+#include "NeuralNetworksTypes.h"
+#include "Types.h"
+#include "Execution.h"
 
 namespace vsi {
 namespace android {
 namespace sl {
-
-class Compilation {
+class Event {
    public:
-    Compilation(Model* model) : model_(model) {}
-    Compilation(Model* model, const std::vector<const VsiDevice*> devices)
-        : model_(model), devices_(devices) {}
-    int Finish() {
-        finished_ = true;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    Model* GetModel() { return model_; }
-    Model* GetModel() const { return model_; }
-    const std::vector<const VsiDevice*>& Devices() { return devices_; }
-    int SetPreference(PreferenceCode preference) {
-        preference_ = preference;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int SetPriority(PriorityCode priority) {
-        priority_ = priority;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int SetTimeout(DurationCode duration) {
-        duration_ = duration;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
+    Event() {}
+    Event(int sync_fence) : sync_fence_(sync_fence) {}
+    Event(Execution exec, Event eve) : execution_(exec) {}
 
    private:
-    Model* model_;
-    PreferenceCode preference_;
-    PriorityCode priority_;
-    DurationCode duration_;
-    const std::vector<const VsiDevice*> devices_;
+    int sync_fence_{0};
+    Execution execution_{nullptr};
+    Event depend_{nullptr};
     bool finished_{false};
+    void* data_{nullptr};
+    size_t length_{0};
 };
 
 }  // namespace sl
 }  // namespace android
 }  // namespace vsi
-
 #endif

@@ -4,8 +4,8 @@ project(${project_name})
 
 option(SL_DIST_BUILD "Build from distributed package"   ON)
 option(PUBLIC_TIM_VX "Download TIM_VX from github"      ON)
-option(RUN_NBG       "Turn on NBG feature"              ON)
 option(USE_GRPC      "Use gRPC support, work with NBG"  OFF)
+option(INTERNAL_BUILD "build with internal resource"  OFF)
 
 if(${RUN_NBG})
   add_definitions(-DRUN_NBG)
@@ -29,6 +29,7 @@ endif()
 include(ExternalProject)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(TimVxConfig)
 
@@ -42,14 +43,20 @@ endif()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc)
 set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/VsiNeuralNetworksSupportLibraryimpl.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/Device.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/DeviceManager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/Memory.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/MemoryDesc.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Model.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/Compilation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Execution.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/Event.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Utils.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/MapOperation.cpp
 )
 set(DEPENDENCIES ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/lib/libtim-vx.so)
 add_library(VsiSupportLibrary SHARED ${SRC})
-target_link_libraries(VsiSupportLibrary ${DEPENDENCIES})
+target_link_libraries(VsiSupportLibrary ${DEPENDENCIES} nativewindow log)
 target_include_directories(VsiSupportLibrary
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/deps/include

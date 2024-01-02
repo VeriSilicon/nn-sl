@@ -23,7 +23,9 @@
  *****************************************************************************/
 #ifndef VSI_ANDROID_SL_UTILS_H_
 #define VSI_ANDROID_SL_UTILS_H_
-#include "NeuralNetworksTypes.h"
+#include <android/NeuralNetworksTypes.h>
+#include <android/log.h>
+
 #include "Types.h"
 #include "slang/type_system.h"
 #include "tim/vx/types.h"
@@ -32,9 +34,13 @@ namespace vsi {
 namespace android {
 namespace sl {
 
-#define FUNC_LINE                                                                        \
-    std::cout << "++++++++++++++" << __func__ << "++++++++++++++" << __LINE__ << "++++++++++++++" \
-              << std::endl
+#define LOG_TAG "NNAPI-VSI-SL"
+#define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGF(...) __android_log_print(ANDROID_LOG_FATAL, LOG_TAG, __VA_ARGS__)
 
 tim::vx::DataType ToTvxDataType(slang::type::data_type type);
 

@@ -210,6 +210,22 @@ class AddCreator : public OpCreator {
         uint32_t idx_in1 = inputs[1];
         uint32_t idx_act = inputs[2];
         uint32_t idx_out = outputs[0];
+        auto in_shape = tensor_map.at(idx_in).shape;
+        auto out_shape = tensor_map.at(idx_out).shape;
+
+        auto dim_iter0 = in_shape.begin();
+        auto dim_iter1 = out_shape.begin();
+        while (dim_iter0 != in_shape.end() && dim_iter1 != out_shape.end()) {
+            if (*dim_iter0 != *dim_iter1 ) {
+                auto dim_need_broadcast = *dim_iter0 > *dim_iter1 ? *dim_iter1 : *dim_iter0;
+                if (dim_need_broadcast != 1) {
+                    std::cout << "Error: Can not broadcast in eletwise" << std::endl;
+                    support_state_ = false;
+                }
+            }
+            ++dim_iter0;
+            ++dim_iter1;
+        }
         std::get<0>(signature.field_tuple) = op::eltwise::Input0(tensor_map.at(idx_in));
         std::get<1>(signature.field_tuple) = op::eltwise::Input1(tensor_map.at(idx_in1));
         std::get<2>(signature.field_tuple) = op::eltwise::Output(tensor_map.at(idx_out));
@@ -652,10 +668,6 @@ class Conv2DCreator : public OpCreator {
         bool layout = false;  // default to CWHN(false), true implies WHCN.
 
         auto bias_type = tensor_map.at(idx_bias).dtype;
-        if (bias_type == slang::type::data_type::kFP16) {
-            std::cout << "Error: F16 bias is not support in conv2d" << std::endl;
-            support_state_ = false;
-        }
         if (inputs.size() == 7 ||
             scalar_map.at(inputs.at(7)).dtype == slang::type::data_type::kBOOL8) {
             // implies implicit padding
@@ -2251,9 +2263,6 @@ class MirrorPadCreator : public OpCreator {
         std::reverse(front_size.begin(), front_size.end());
         std::reverse(back_size.begin(), back_size.end());
         int32_t pad_mode = *p_pad_mode;
-//         FUNC_LINE;
-// PrintVector(front_size);
-// PrintVector(back_size);
         auto vsi_pad_mode = tim::vx::ops::Pad::PAD_MODE_CONSTANT;
         switch (pad_mode) {
             case 0:
@@ -3555,9 +3564,15 @@ class SliceCreator : public OpCreator {
         auto size_length = std::get<2>(signature.field_tuple).storage.data_length / 4;
         std::vector<int32_t> begin((int32_t*)p_begin, (int32_t*)p_begin + begin_length);
         std::vector<int32_t> size((int32_t*)p_size, (int32_t*)p_size + size_length);
+        auto input_shape =std::get<0>(signature.field_tuple).storage.shape;
+        for (int i = 0; i < size.size(); ++i) {
+            if (size[i] < 0) {
+                size[i] = input_shape[i] - begin[i];
+            }
+        } // size may be negative
         std::reverse(begin.begin(), begin.end());
         std::reverse(size.begin(), size.end());
-        return graph->CreateOperation<tim::vx::ops::Slice>(0, begin, size);
+        return graph->CreateOperation<tim::vx::ops::Slice>(input_shape.size(), begin, size);
     }
 
    private:

@@ -46,13 +46,9 @@ class Execution {
         vx_context_ = tim::vx::Context::Create();
         reusable_ = false;
     }
-
-    int SetReusable(bool reusable) {
-        reusable_ = reusable;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-
     int SetInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
+                 size_t length);
+    int SetOutput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
                  size_t length);
     int SetInputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
                            const Memory* memory, size_t offset, size_t length);
@@ -61,7 +57,14 @@ class Execution {
     int Compute();
     int GetOutputOperandRank(int32_t index, uint32_t* rank);
     int GetOutputOperandDimensions(int32_t index, uint32_t* dimensions);
-
+    int SetReusable(bool reusable) {
+        reusable_ = reusable;
+        return ANEURALNETWORKS_NO_ERROR;
+    }
+    int SetLoopTimeout(uint64_t duration) {
+        duration_ = duration;
+        return ANEURALNETWORKS_NO_ERROR;
+    }
    private:
     std::shared_ptr<tim::vx::Tensor> CreateTvxIOTensor(const slang::type::tensor_storage& tensor,
                                                        tim::vx::TensorAttribute attr);
@@ -88,6 +91,7 @@ class Execution {
               std::map<std::shared_ptr<tim::vx::Tensor>, std::shared_ptr<tim::vx::Tensor>>>
             layout_infered_;
     bool reusable_;
+    uint64_t duration_;
     // src_graph output order may be different from infer_graph
     std::vector<uint32_t> output_order_;
     std::vector<uint32_t> out_memory_order_;
