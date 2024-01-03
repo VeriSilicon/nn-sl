@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -37,9 +37,7 @@ std::shared_ptr<tim::vx::Tensor> CreateTvxTensor(std::shared_ptr<tim::vx::Graph>
     tim::vx::DataType data_type = ToTvxDataType(tensor.dtype);
     tim::vx::ShapeType shape = tensor.shape;
     std::reverse(shape.begin(), shape.end());
-    const void* data = tensor.data;
-    tim::vx::TensorAttribute attr =
-            data ? tim::vx::TensorAttribute::CONSTANT : tim::vx::TensorAttribute::TRANSIENT;
+
     tim::vx::Quantization quantization;
     tim::vx::QuantType quant_type = ToTvxQuantType(tensor.qtype);
     if (quant_type == tim::vx::QuantType::ASYMMETRIC) {
@@ -49,8 +47,8 @@ std::shared_ptr<tim::vx::Tensor> CreateTvxTensor(std::shared_ptr<tim::vx::Graph>
                 tim::vx::Quantization(quant_type, tensor.channel_dim, tensor.per_channel_scales,
                                       tensor.per_channel_zero_points);
     }
-    tim::vx::TensorSpec spec(data_type, shape, attr, quantization);
-    return graph->CreateTensor(spec, data);
+    tim::vx::TensorSpec spec(data_type, shape, tim::vx::TensorAttribute::TRANSIENT, quantization);
+    return graph->CreateTensor(spec);
 }
 
 std::shared_ptr<tim::vx::Tensor> FuseActivation(std::shared_ptr<tim::vx::Graph> graph,
@@ -70,13 +68,25 @@ std::shared_ptr<tim::vx::Tensor> FuseActivation(std::shared_ptr<tim::vx::Graph> 
             op = graph->CreateOperation<tim::vx::ops::Relu6>();
             break;
         default:
-            std::cout << "Unkown fuse code" << std::endl;
+            LOGE("Unkown fuse code");
             return nullptr;
     }
     auto input = graph->CreateTensor(output->GetSpec().AsTransientSpec());
     op->BindInput(input);
     op->BindOutput(output);
     return input;
+}
+
+std::vector<uint32_t> ExpandedShape(
+    const std::vector<uint32_t>& long_shape,
+    const std::vector<uint32_t>& short_shape) {
+  std::vector<uint32_t> expanded_shape(short_shape);
+  int32_t ref_rank = long_shape.size();
+  int32_t origin_rank = short_shape.size();
+  for (int32_t i = 0; i < ref_rank; ++i) {
+    if (i >= origin_rank) expanded_shape.push_back(1);
+  }
+  return expanded_shape;
 }
 }  // namespace
 
@@ -204,8 +214,8 @@ int MapConv2D(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> 
     auto bias = vx_tensors[idx_bias];
     auto output = vx_tensors[idx_out];
 
-    const uint8_t* p_act_code = scalar_map.at(idx_act).data.data();
-    int32_t fuse_code = *(int32_t*)p_act_code;
+    auto activationCodeScalar = scalar_map.at(idx_act);
+    int32_t fuse_code = *reinterpret_cast<const int32_t*>(activationCodeScalar.data.data());
 
     output = FuseActivation(graph, fuse_code, output);
 
@@ -301,6 +311,15 @@ int MapEltwise(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator>
     int32_t fuse_code = *reinterpret_cast<const int32_t*>(fuse_code_data);
 
     output = FuseActivation(graph, fuse_code, output);
+    if (output == nullptr) return ANEURALNETWORKS_BAD_DATA;
+
+    auto in_shape = input->GetShape();
+    auto in_shape1 = input1->GetShape();
+    auto out_shape = output->GetShape();
+    if (in_shape < out_shape && input->GetSpec().GetTensorAttribute() != tim::vx::CONSTANT)
+        input->GetSpec().SetShape(ExpandedShape(out_shape, in_shape));
+    if (in_shape1 < out_shape && input1->GetSpec().GetTensorAttribute() != tim::vx::CONSTANT)
+        input1->GetSpec().SetShape(ExpandedShape(out_shape, in_shape1));
 
     auto eltwise = op_creator->Lowering(graph);
     eltwise->BindInput(input);
@@ -310,10 +329,11 @@ int MapEltwise(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator>
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapEltwiseWithNoAct(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-           const TensorMap& tensor_map, const ScalarMap& scalar_map,
-           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapEltwiseWithNoAct(std::shared_ptr<tim::vx::Graph> graph,
+                        std::shared_ptr<OpCreator> op_creator,
+                        std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                        const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                        const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
     uint32_t idx_in1 = inputs[1];
     uint32_t idx_out = outputs[0];
@@ -547,11 +567,10 @@ int MapInstanceNormalization(
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int MapHashtableLookup(
-        std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-        std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-        const TensorMap& tensor_map, const ScalarMap& scalar_map,
-        const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+int MapHashtableLookup(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
+                       std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+                       const TensorMap& tensor_map, const ScalarMap& scalar_map,
+                       const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_lookups = inputs[0];
     uint32_t idx_keys = inputs[1];
     uint32_t idx_values = inputs[2];
@@ -625,7 +644,7 @@ int MapPack(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op
     int32_t inputs_num = inputs.size();
     uint32_t idx_out = outputs[0];
     std::vector<std::shared_ptr<tim::vx::Tensor>> inputs_tensors;
-    for(int i = 1; i<inputs_num; ++i) {
+    for (int i = 1; i < inputs_num; ++i) {
         uint32_t idx_in = inputs[i];
         if (!vx_tensors.count(idx_in)) {
             vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
@@ -693,6 +712,10 @@ int MapPrelu(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> o
 
     auto input = vx_tensors[idx_in];
     auto alpha = vx_tensors[idx_alpha];
+    auto alpha_shape = alpha->GetShape();
+    bool dims_all_1 = std::all_of(alpha_shape.begin(), alpha_shape.end(),
+                                  [](uint32_t dims) { return dims == 1; });
+    if (dims_all_1) alpha->GetSpec().SetShape(std::vector<uint32_t>{1});
     auto output = vx_tensors[idx_out];
 
     auto prelu = op_creator->Lowering(graph);
@@ -734,9 +757,9 @@ int MapRelationalOp(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCre
 }
 
 int MapRoi(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_creator,
-                    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
-                    const TensorMap& tensor_map, const ScalarMap& scalar_map,
-                    const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
+           std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>>& vx_tensors,
+           const TensorMap& tensor_map, const ScalarMap& scalar_map,
+           const std::vector<uint32_t>& inputs, const std::vector<uint32_t>& outputs) {
     uint32_t idx_in = inputs[0];
     uint32_t idx_regions = inputs[1];
     uint32_t idx_batch_index = inputs[2];
@@ -749,7 +772,8 @@ int MapRoi(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op_
         vx_tensors.insert({idx_regions, CreateTvxTensor(graph, tensor_map.at(idx_regions))});
     }
     if (!vx_tensors.count(idx_batch_index)) {
-        vx_tensors.insert({idx_batch_index, CreateTvxTensor(graph, tensor_map.at(idx_batch_index))});
+        vx_tensors.insert(
+                {idx_batch_index, CreateTvxTensor(graph, tensor_map.at(idx_batch_index))});
     }
     if (!vx_tensors.count(idx_out)) {
         vx_tensors.insert({idx_out, CreateTvxTensor(graph, tensor_map.at(idx_out))});
@@ -870,10 +894,12 @@ int MapSvdf(std::shared_ptr<tim::vx::Graph> graph, std::shared_ptr<OpCreator> op
         vx_tensors.insert({idx_in, CreateTvxTensor(graph, tensor_map.at(idx_in))});
     }
     if (!vx_tensors.count(idx_weights_feature)) {
-        vx_tensors.insert({idx_weights_feature, CreateTvxTensor(graph, tensor_map.at(idx_weights_feature))});
+        vx_tensors.insert(
+                {idx_weights_feature, CreateTvxTensor(graph, tensor_map.at(idx_weights_feature))});
     }
     if (!vx_tensors.count(idx_weights_time)) {
-        vx_tensors.insert({idx_weights_time, CreateTvxTensor(graph, tensor_map.at(idx_weights_time))});
+        vx_tensors.insert(
+                {idx_weights_time, CreateTvxTensor(graph, tensor_map.at(idx_weights_time))});
     }
     if (!vx_tensors.count(idx_state_in)) {
         vx_tensors.insert({idx_state_in, CreateTvxTensor(graph, tensor_map.at(idx_state_in))});

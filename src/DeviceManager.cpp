@@ -22,48 +22,17 @@
  *
  *****************************************************************************/
 
-#ifndef VSI_ANDROID_SL_UTILS_H_
-#define VSI_ANDROID_SL_UTILS_H_
+#include "DeviceManager.h"
 
-#include <android/NeuralNetworksTypes.h>
-#include <android/log.h>
-
-#include "Types.h"
-#include "slang/type_system.h"
-#include "tim/vx/types.h"
+#include "tim/vx/platform/native.h"
 
 namespace vsi::android::sl {
 
-#define LOG_TAG "NNAPI-VSI-SL"
-
-#if NDEBUG
-#define LOGV(...) static_assert(true, "NOOP")
-#else
-#define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
-#endif
-
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define LOGF(...) __android_log_print(ANDROID_LOG_FATAL, LOG_TAG, __VA_ARGS__)
-
-constexpr size_t alignSize(size_t size, size_t alignment) {
-    return (size + (alignment - 1)) & ~(alignment - 1);
+DeviceManager::DeviceManager() {
+    auto vxDevices = tim::vx::platform::NativeDevice::Enumerate();
+    for (auto vxDevice : vxDevices) {
+        devices_.push_back(std::make_shared<Device>(vxDevice));
+    }
 }
 
-size_t getDtypeSize(slang::type::data_type type);
-
-tim::vx::DataType ToTvxDataType(slang::type::data_type type);
-
-tim::vx::QuantType ToTvxQuantType(slang::type::quant_type type);
-
-slang::type::data_type MapDataType(int32_t type);
-
-slang::type::quant_type MapQuantType(int32_t type);
-
-Shape combineShape(const Shape& lhs, const Shape& rhs);
-
 }  // namespace vsi::android::sl
-
-#endif

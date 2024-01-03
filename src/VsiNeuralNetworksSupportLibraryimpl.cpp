@@ -15,7 +15,7 @@
  */
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software" =
@@ -36,126 +36,106 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
-#include <android/log.h>
 
-#include <algorithm>
-#include <cstddef>
-#include <iostream>
+#include <android/NeuralNetworks.h>
+
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "Compilation.h"
+#include "Device.h"
 #include "DeviceManager.h"
+#include "Event.h"
 #include "Execution.h"
 #include "Memory.h"
+#include "MemoryDesc.h"
 #include "Model.h"
-// #include "Event.h"
-#include <android/NeuralNetworks.h>
 #include "NeuralNetworksSupportLibraryImpl.h"
-#include "VsiDevice.h"
+#include "Utils.h"
 
-
-namespace operation_while {
-
-constexpr auto kLoopTimeoutDefault = std::chrono::seconds{2};
-constexpr auto kLoopTimeoutMaximum = std::chrono::seconds{15};
-
-constexpr uint32_t kCondModelOperand = 0;
-constexpr uint32_t kBodyModelOperand = 1;
-constexpr uint32_t kFirstInput = 2;
-
-// See ANeuralNetworksExecution_setLoopTimeout.
-constexpr uint64_t kTimeoutNsDefault =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(kLoopTimeoutDefault).count();
-constexpr uint64_t kTimeoutNsMaximum =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(kLoopTimeoutMaximum).count();
-
-}  // namespace operation_while
-
-// using namespace android::nn;
 using namespace vsi::android::sl;
-#define TAG_NAME "NNAPI-SL"
 
 int ANeuralNetworks_getDeviceCount(uint32_t* numDevices) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworks_getDeviceCount is called ");
-    *numDevices = DeviceManager::Instance()->GetDevices().size();
+    LOGV(__func__);
+    if (numDevices == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    *numDevices = DeviceManager::get()->getNumDevices();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworks_getDevice(uint32_t devIndex, ANeuralNetworksDevice** device) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "=====ANeuralNetworks_getDevice is called ");
+    LOGV(__func__);
     if (device == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworks_getDevice passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    auto devices = DeviceManager::Instance()->GetDevices();
-    *device = reinterpret_cast<ANeuralNetworksDevice*>(devices.at(devIndex).get());
 
+    const auto& devices = DeviceManager::get()->getDevices();
+    if (devIndex >= devices.size()) {
+        LOGE("%s passed an invalid device index", __func__);
+        return ANEURALNETWORKS_BAD_DATA;
+    }
+
+    *device = reinterpret_cast<ANeuralNetworksDevice*>(devices[devIndex].get());
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksDevice_getName(const ANeuralNetworksDevice* device, const char** name) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_getName is called ");
+    LOGV(__func__);
     if (device == nullptr || name == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksDevice_getName passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
 
-    *name = d->GetName().c_str();
+    const auto* dev = reinterpret_cast<const Device*>(device);
+    *name = dev->getName().data();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksDevice_getVersion(const ANeuralNetworksDevice* device, const char** version) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_getVersion is called ");
+    LOGV(__func__);
     if (device == nullptr || version == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksDevice_getVersion passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
-    *version = d->GetVersion().c_str();
+
+    const auto* dev = reinterpret_cast<const Device*>(device);
+    *version = dev->getVersion().data();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksDevice_getType(const ANeuralNetworksDevice* device, int32_t* type) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_getType is called ");
-    if (!device) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksDevice_getType passed a nullptr");
+    LOGV(__func__);
+    if (device == nullptr || type == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
+
     *type = ANEURALNETWORKS_DEVICE_ACCELERATOR;
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksDevice_getFeatureLevel(const ANeuralNetworksDevice* device,
                                           int64_t* featureLevel) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_getFeatureLevel is called ");
-    if (device == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksDevice_getFeatureLevel passed a nullptr");
+    LOGV(__func__);
+    if (device == nullptr || featureLevel == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
-    *featureLevel = d->GetFeatureLevel();
+
+    const auto* dev = reinterpret_cast<const Device*>(device);
+    *featureLevel = dev->getFeatureLevel();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksDevice_wait(const ANeuralNetworksDevice* device) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_wait is called ");
+    LOGV(__func__);
     if (device == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksDevice_wait passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
 
@@ -165,701 +145,728 @@ int ANeuralNetworksDevice_wait(const ANeuralNetworksDevice* device) {
 int ANeuralNetworksModel_getSupportedOperationsForDevices(
         const ANeuralNetworksModel* model, const ANeuralNetworksDevice* const* devices,
         uint32_t numDevices, bool* supportedOps) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_getSupportedOperationsForDevices is "
-                        "called ");
-    if (!model || !devices || !supportedOps) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_getSupportedOperationsForDevices get nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || devices == nullptr || supportedOps == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    const Model* m = reinterpret_cast<const Model*>(model);
-    return m->GetSupportedOperations(supportedOps);
-}
 
-int ANeuralNetworksCompilation_createForDevices(ANeuralNetworksModel* model,
-                                                const ANeuralNetworksDevice* const* devices,
-                                                uint32_t numDevices,
-                                                ANeuralNetworksCompilation** compilation) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_createForDevices is called ");
-    if (!model || !devices || !compilation) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_createForDevices get nullptr");
-        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    if (numDevices == 0) {
+        LOGE("%s passed an empty device list", __func__);
+        return ANEURALNETWORKS_BAD_DATA;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    // pointer "devices" may be released after this call, so we must copy its
-    // content here.
-    const VsiDevice* const* vsiDevices = reinterpret_cast<const VsiDevice* const*>(devices);
-    std::vector<const VsiDevice*> vsiDeviceVec;
-    for (uint32_t i = 0; i < numDevices; ++i) vsiDeviceVec.push_back(vsiDevices[i]);
 
-    Compilation* c = new Compilation(m, vsiDeviceVec);
-    *compilation = reinterpret_cast<ANeuralNetworksCompilation*>(c);
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int ANeuralNetworksExecution_compute(ANeuralNetworksExecution* execution) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_compute is called ");
-    if (!execution) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_compute get nullptr");
-        return ANEURALNETWORKS_UNEXPECTED_NULL;
-    }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->Compute();
-}
-
-int ANeuralNetworksExecution_setMeasureTiming(ANeuralNetworksExecution* execution, bool measure) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setMeasureTiming is called ");
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int ANeuralNetworksExecution_getDuration(const ANeuralNetworksExecution* execution,
-                                         int32_t durationCode, uint64_t* duration) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_getDuration is called ");
-
-    return ANEURALNETWORKS_NO_ERROR;
+    const auto* m = reinterpret_cast<const Model*>(model);
+    return m->getSupportedOperations(supportedOps);
 }
 
 int ANeuralNetworksBurst_create(ANeuralNetworksCompilation* compilation,
                                 ANeuralNetworksBurst** burst) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksBurst_create is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksBurst_free(ANeuralNetworksBurst* burst) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "=====ANeuralNetworksBurst_free is called ");
+    LOGV(__func__);
 }
 
 int ANeuralNetworksExecution_burstCompute(ANeuralNetworksExecution* execution,
                                           ANeuralNetworksBurst* burst) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_burstCompute is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksMemoryDesc_create(ANeuralNetworksMemoryDesc** desc) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_create is called ");
-    if (desc != nullptr) {
-        *desc = nullptr;
-    }
-    if (!desc) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_create passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    MemoryDesc* mdesc = new MemoryDesc();
-    *desc = reinterpret_cast<ANeuralNetworksMemoryDesc*>(mdesc);
+
+    auto* memDesc = new MemoryDesc();
+    *desc = reinterpret_cast<ANeuralNetworksMemoryDesc*>(memDesc);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksMemoryDesc_free(ANeuralNetworksMemoryDesc* desc) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_free is called ");
-    if (!desc) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_free passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr) {
+        LOGD("%s passed a nullptr", __func__);
         return;
     }
-    MemoryDesc* mdesc = reinterpret_cast<MemoryDesc*>(desc);
-    delete mdesc;
+
+    auto* memDesc = reinterpret_cast<MemoryDesc*>(desc);
+    delete memDesc;
 }
 
 int ANeuralNetworksMemoryDesc_addInputRole(ANeuralNetworksMemoryDesc* desc,
                                            const ANeuralNetworksCompilation* compilation,
                                            uint32_t index, float frequency) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_addInputRole is called ");
-    if (!desc || !compilation) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_addInputRole passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr || compilation == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    if (frequency <= 0 || frequency > 1) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc has a invalid frequency");
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    MemoryDesc* mdesc = reinterpret_cast<MemoryDesc*>(desc);
-    if (mdesc->IsFinished()) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "This memory descriptor has been finished");
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    const Compilation* c = reinterpret_cast<const Compilation*>(compilation);
-    auto model = c->GetModel();
-    auto tensor_map = model->Tensors();
-    int32_t input_id = model->Inputs()[index];
-    return mdesc->AddRole(tensor_map, vsi::android::sl::IOType::INPUT, input_id, frequency);
+
+    auto* memDesc = reinterpret_cast<MemoryDesc*>(desc);
+    const auto* c = reinterpret_cast<const Compilation*>(compilation);
+    return memDesc->addRole(c, IOType::INPUT, index, frequency);
 }
 
 int ANeuralNetworksMemoryDesc_addOutputRole(ANeuralNetworksMemoryDesc* desc,
                                             const ANeuralNetworksCompilation* compilation,
                                             uint32_t index, float frequency) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_addOutputRole is called ");
-    if (!desc || !compilation) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_addInputRole passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr || compilation == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    if (frequency <= 0 || frequency > 1) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc has a invalid frequency");
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    MemoryDesc* mdesc = reinterpret_cast<MemoryDesc*>(desc);
-    if (mdesc->IsFinished()) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "This memory descriptor has been finished");
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    const Compilation* c = reinterpret_cast<const Compilation*>(compilation);
-    auto model = c->GetModel();
-    auto tensor_map = model->Tensors();
-    return mdesc->AddRole(tensor_map, vsi::android::sl::IOType::OUTPUT, index, frequency);
+
+    auto* memDesc = reinterpret_cast<MemoryDesc*>(desc);
+    const auto* c = reinterpret_cast<const Compilation*>(compilation);
+    return memDesc->addRole(c, IOType::OUTPUT, index, frequency);
 }
 
 int ANeuralNetworksMemoryDesc_setDimensions(ANeuralNetworksMemoryDesc* desc, uint32_t rank,
                                             const uint32_t* dimensions) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_setDimensions is called ");
-    if (!desc || (!dimensions && rank > 0)) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_setDimensions passed a nullptr");
+    LOGV(__func__);
+
+    if (desc == nullptr || (dimensions == nullptr && rank > 0)) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    MemoryDesc* mdesc = reinterpret_cast<MemoryDesc*>(desc);
-    if (mdesc->IsFinished()) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "This memory descriptor has been finished");
-        return ANEURALNETWORKS_BAD_DATA;
-    }
+
+    auto* memDesc = reinterpret_cast<MemoryDesc*>(desc);
     const std::vector<uint32_t> shape(dimensions, dimensions + rank);
-    return mdesc->SetDimensions(shape);
+    return memDesc->setShape(shape);
 }
 
 int ANeuralNetworksMemoryDesc_finish(ANeuralNetworksMemoryDesc* desc) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemoryDesc_finish is called ");
-    if (!desc) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemoryDesc_finish passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    MemoryDesc* mdesc = reinterpret_cast<MemoryDesc*>(desc);
-    return mdesc->Finish();
+
+    auto* memDesc = reinterpret_cast<MemoryDesc*>(desc);
+    return memDesc->finish();
 }
 
 int ANeuralNetworksMemory_createFromDesc(const ANeuralNetworksMemoryDesc* desc,
                                          ANeuralNetworksMemory** memory) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemory_createFromDesc is called ");
-    if (!desc || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemory_createFromDesc passed a nullptr");
+    LOGV(__func__);
+    if (desc == nullptr || memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    auto mdesc = reinterpret_cast<const MemoryDesc*>(desc);
-    Memory* mem = new Memory();
-    auto status = mem->CreateFromDesc(mdesc);
-    if (status != ANEURALNETWORKS_NO_ERROR) {
-        return status;
-    }
-    *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
-    return ANEURALNETWORKS_NO_ERROR;
-}
 
-int ANeuralNetworksMemory_copy(const ANeuralNetworksMemory* src, const ANeuralNetworksMemory* dst) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemory_copy is called ");
-    if (!src || !dst) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "ANeuralNetworksMemory_copy passed a nullptr");
-        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    const auto* memDesc = reinterpret_cast<const MemoryDesc*>(desc);
+    auto* mem = DeviceMemory::create(memDesc);
+    if (mem == nullptr) {
+        LOGE("%s failed to create device memory from desc", __func__);
+        return ANEURALNETWORKS_OP_FAILED;
     }
-    Memory* msrc = const_cast<Memory*>(reinterpret_cast<const Memory*>(src));
-    Memory* mdst = const_cast<Memory*>(reinterpret_cast<const Memory*>(dst));
-    if (mdst->IsCreateFromDesc() && msrc->IsCreateFromDesc()) {
-        auto src_rank = msrc->GetDesc()->Shape().size();
-        auto dst_rank = mdst->GetDesc()->Shape().size();
-        if(src_rank != dst_rank) return ANEURALNETWORKS_BAD_DATA;
-    } else {
-        if(msrc->Length() != mdst->Length()) return ANEURALNETWORKS_BAD_DATA;
-    }
-    // TODO: if the src is created from ANeuralNetworksMemory_createFromDesc, it must have been used
-    // as an output in a successful execution, or used as the destination memory in a successful
-    // ANeuralNetworksMemory_copy.
-    memcpy(mdst->Data(), msrc->Data(), msrc->Length());
+
+    *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksMemory_createFromFd(size_t size, int prot, int fd, size_t offset,
                                        ANeuralNetworksMemory** memory) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemory_createFromFd is called ");
-    if (!fd || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemory_createFromFd passed a nullptr");
+    LOGV(__func__);
+
+    if (memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Memory* mem = new Memory();
-    auto status = mem->CreateFromFd(size, prot, fd, offset);
-    if (status != ANEURALNETWORKS_NO_ERROR) {
-        return status;
+
+    auto* mem = FdMemory::create(size, prot, fd, offset);
+    if (mem == nullptr) {
+        LOGE("%s failed to create memory from fd (%d)", __func__, fd);
+        return ANEURALNETWORKS_BAD_DATA;
     }
+
     *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksMemory_createFromAHardwareBuffer(const AHardwareBuffer* ahwb,
                                                     ANeuralNetworksMemory** memory) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemory_createFromAHardwareBuffer is called ");
-    if (!ahwb || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemory_createFromAHardwareBuffer passed a nullptr");
+    LOGV(__func__);
+
+    if (ahwb == nullptr || memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Memory* mem = new Memory();
-    auto status = mem->CreateFromAHWB(ahwb);
-    if (status != ANEURALNETWORKS_NO_ERROR) {
-        return status;
+
+    auto* mem = AHardwareBufferMemory::create(ahwb);
+    if (mem == nullptr) {
+        LOGE("%s failed to create memory from ahwb", __func__);
+        return ANEURALNETWORKS_BAD_DATA;
     }
+
     *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksMemory_free(ANeuralNetworksMemory* memory) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksMemory_free is called ");
-    if (!memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksMemory_free passed a nullptr");
-        return ;
+    LOGV(__func__);
+    if (memory == nullptr) {
+        LOGD("%s passed a nullptr", __func__);
+        return;
     }
-    if (memory == nullptr) return;
-    Memory* mem = reinterpret_cast<Memory*>(memory);
+
+    auto* mem = reinterpret_cast<IMemory*>(memory);
     delete mem;
-    mem = nullptr;
+}
+
+int ANeuralNetworksMemory_copy(const ANeuralNetworksMemory* src, const ANeuralNetworksMemory* dst) {
+    LOGV(__func__);
+    if (src == nullptr || dst == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    const auto* srcMem = reinterpret_cast<const IMemory*>(src);
+    const auto* dstMem = reinterpret_cast<const IMemory*>(dst);
+    return IMemory::copy(srcMem, dstMem);
 }
 
 int ANeuralNetworksModel_create(ANeuralNetworksModel** model) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_create is called ");
-    if (!model) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_create passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = new Model();
+
+    auto* m = new Model();
     *model = reinterpret_cast<ANeuralNetworksModel*>(m);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksModel_free(ANeuralNetworksModel* model) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "=====ANeuralNetworksModel_free is called ");
-    if (!model) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_free passed a nullptr");
-        return ;
+    LOGV(__func__);
+
+    if (model == nullptr) {
+        LOGV("%s passed a nullptr", __func__);
+        return;
     }
-    if (model == nullptr) return;
-    Model* m = reinterpret_cast<Model*>(model);
+
+    auto* m = reinterpret_cast<Model*>(model);
     delete m;
-    m = nullptr;
 }
 
 int ANeuralNetworksModel_finish(ANeuralNetworksModel* model) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_finish is called ");
-    if (!model) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_finish passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->Finish();
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->finish();
 }
 
 int ANeuralNetworksModel_addOperand(ANeuralNetworksModel* model,
                                     const ANeuralNetworksOperandType* type) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_addOperand is called ");
-    if (!model || !type) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_addOperand passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || type == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->AddOperand(*type);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->addOperand(*type);
 }
 
 int ANeuralNetworksModel_setOperandValue(ANeuralNetworksModel* model, int32_t index,
                                          const void* buffer, size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_setOperandValue is called ");
-    if (!model || (!buffer && length != 0)) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_setOperandValue passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || (buffer == nullptr && length != 0)) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->SetOperandValue(index, buffer, length);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->setOperandValue(index, buffer, length);
 }
 
 int ANeuralNetworksModel_setOperandValueFromMemory(ANeuralNetworksModel* model, int32_t index,
                                                    const ANeuralNetworksMemory* memory,
                                                    size_t offset, size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_setOperandValueFromMemory is called ");
-    if (!model || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_setOperandValueFromMemory passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    const Memory* mem = reinterpret_cast<const Memory*>(memory);
-    return m->SetOperandValueFromMemory(index, mem, offset, length);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    const auto* mem = reinterpret_cast<const IMemory*>(memory);
+    return m->setOperandValueFromMemory(index, mem, offset, length);
 }
 
 int ANeuralNetworksModel_setOperandValueFromModel(ANeuralNetworksModel* model, int32_t index,
                                                   const ANeuralNetworksModel* value) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_setOperandValueFromModel is called ");
+    LOGV(__func__);
 
-    return ANEURALNETWORKS_NO_ERROR;
+    if (model == nullptr || value == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* m = reinterpret_cast<Model*>(model);
+    const auto* reference = reinterpret_cast<const Model*>(value);
+    return m->setOperandValueFromModel(index, reference);
 }
 
 int ANeuralNetworksModel_addOperation(ANeuralNetworksModel* model,
                                       ANeuralNetworksOperationType type, uint32_t inputCount,
                                       const uint32_t* inputs, uint32_t outputCount,
                                       const uint32_t* outputs) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_addOperation is called ");
-    if (!model || !inputs || !outputs) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_addOperation passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || inputs == nullptr || outputs == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->AddOperation(type, inputCount, inputs, outputCount, outputs);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->addOperation(type, inputCount, inputs, outputCount, outputs);
 }
 
 int ANeuralNetworksModel_setOperandSymmPerChannelQuantParams(
         ANeuralNetworksModel* model, int32_t index,
         const ANeuralNetworksSymmPerChannelQuantParams* channelQuant) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_setOperandSymmPerChannelQuantParams "
-                        "is called ");
-    if (!model || !channelQuant) {
-        __android_log_print(
-                ANDROID_LOG_VERBOSE, TAG_NAME,
-                "ANeuralNetworksModel_setOperandSymmPerChannelQuantParams passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || channelQuant == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->SetOperandSymmPerChannelQuantParams(index, *channelQuant);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->setOperandSymmPerChannelQuantParams(index, *channelQuant);
 }
 
 int ANeuralNetworksModel_identifyInputsAndOutputs(ANeuralNetworksModel* model, uint32_t inputCount,
                                                   const uint32_t* inputs, uint32_t outputCount,
                                                   const uint32_t* outputs) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_identifyInputsAndOutputs is called ");
-    if (!model || !inputs || !outputs) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksModel_identifyInputsAndOutputs passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr || inputs == nullptr || outputs == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->IdentifyInputsAndOutputs(inputCount, inputs, outputCount, outputs);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->identifyInputsAndOutputs(inputCount, inputs, outputCount, outputs);
 }
 
 int ANeuralNetworksModel_relaxComputationFloat32toFloat16(ANeuralNetworksModel* model, bool allow) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_relaxComputationFloat32toFloat16 is "
-                        "called ");
-    if (!model) {
-        __android_log_print(
-                ANDROID_LOG_VERBOSE, TAG_NAME,
-                "ANeuralNetworksModel_relaxComputationFloat32toFloat16 passed a nullptr");
+    LOGV(__func__);
+
+    if (model == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    return m->RelaxComputationFloat32toFloat16(allow);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    return m->relaxComputationFloat32toFloat16(allow);
 }
 
 int ANeuralNetworksCompilation_create(ANeuralNetworksModel* model,
                                       ANeuralNetworksCompilation** compilation) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_create is called ");
-    if (!model || !compilation) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_create passed a nullptr");
+    LOGV(__func__);
+    if (model == nullptr || compilation == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Model* m = reinterpret_cast<Model*>(model);
-    Compilation* c = new Compilation(m);
+
+    auto* m = reinterpret_cast<Model*>(model);
+    auto* c = new Compilation(m);
+    *compilation = reinterpret_cast<ANeuralNetworksCompilation*>(c);
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int ANeuralNetworksCompilation_createForDevices(ANeuralNetworksModel* model,
+                                                const ANeuralNetworksDevice* const* devices,
+                                                uint32_t numDevices,
+                                                ANeuralNetworksCompilation** compilation) {
+    LOGV(__func__);
+
+    if (model == nullptr || devices == nullptr || compilation == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    if (numDevices == 0) {
+        LOGE("%s passed an empty device list", __func__);
+        return ANEURALNETWORKS_BAD_DATA;
+    }
+
+    std::vector<std::shared_ptr<Device>> selectedDevices;
+    for (size_t i = 0; i < numDevices; i++) {
+        if (devices[i] == nullptr) {
+            LOGE("%s passed a nullptr as a device", __func__);
+            return ANEURALNETWORKS_UNEXPECTED_NULL;
+        }
+
+        for (size_t j = i + 1; j < numDevices; j++) {
+            if (devices[i] == devices[j]) {
+                LOGE("%s passed duplicate devices", __func__);
+                return ANEURALNETWORKS_BAD_DATA;
+            }
+        }
+
+        for (const auto& device : DeviceManager::get()->getDevices()) {
+            if (device.get() == reinterpret_cast<const Device*>(devices[i])) {
+                // Found a match.
+                selectedDevices.push_back(device);
+                break;
+            }
+        }
+    }
+
+    if (selectedDevices.size() != numDevices) {
+        LOGE("%s passed an invalid device set", __func__);
+    }
+
+    auto* m = reinterpret_cast<Model*>(model);
+    auto* c = new Compilation(m, selectedDevices);
     *compilation = reinterpret_cast<ANeuralNetworksCompilation*>(c);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksCompilation_free(ANeuralNetworksCompilation* compilation) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_free is called ");
+    LOGV(__func__);
     if (compilation == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_free passed a nullptr");
+        LOGV("%s passed a nullptr", __func__);
         return;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
     delete c;
-    c = nullptr;
 }
 
 int ANeuralNetworksCompilation_setPreference(ANeuralNetworksCompilation* compilation,
                                              int32_t preference) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_setPreference is called ");
+    LOGV(__func__);
     if (compilation == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_setPreference passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
-    return c->SetPreference((PreferenceCode)preference);
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->setPreference(static_cast<PreferenceCode>(preference));
 }
 
 int ANeuralNetworksCompilation_setCaching(ANeuralNetworksCompilation* compilation,
                                           const char* cacheDir, const uint8_t* token) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_setCaching is called ");
+    LOGV(__func__);
+    if (compilation == nullptr || cacheDir == nullptr || token == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
 
-    return ANEURALNETWORKS_NO_ERROR;
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->setCaching(cacheDir, token);
 }
 
 int ANeuralNetworksCompilation_finish(ANeuralNetworksCompilation* compilation) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_finish is called ");
+    LOGV(__func__);
     if (compilation == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_finish passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
-    return c->Finish();
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->finish();
 }
 
 int ANeuralNetworksCompilation_setPriority(ANeuralNetworksCompilation* compilation, int priority) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_setPriority is called ");
+    LOGV(__func__);
     if (compilation == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_setPriority passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
-    return c->SetPriority((PriorityCode)priority);
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->setPriority(static_cast<PriorityCode>(priority));
 }
 
 int ANeuralNetworksCompilation_setTimeout(ANeuralNetworksCompilation* compilation,
                                           uint64_t duration) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_setTimeout is called ");
+    LOGV(__func__);
     if (compilation == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksCompilation_setTimeout passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
-    return c->SetTimeout((DurationCode)duration);
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->setTimeout(std::chrono::nanoseconds(duration));
 }
 
 int ANeuralNetworksExecution_create(ANeuralNetworksCompilation* compilation,
                                     ANeuralNetworksExecution** execution) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_create is called ");
-    if (!execution || !compilation) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_create passed a nullptr");
+    LOGV(__func__);
+    if (compilation == nullptr || execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Compilation* c = reinterpret_cast<Compilation*>(compilation);
-    Execution* e = new Execution(c);
-    *execution = reinterpret_cast<ANeuralNetworksExecution*>(e);
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    auto* exec = new Execution(c);
+    *execution = reinterpret_cast<ANeuralNetworksExecution*>(exec);
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 void ANeuralNetworksExecution_free(ANeuralNetworksExecution* execution) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_free is called ");
-    if (!execution) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_free passed a nullptr");
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGV("%s passed a nullptr", __func__);
         return;
     }
-    if (execution == nullptr) return;
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    delete e;
-    e = nullptr;
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    delete exec;
 }
 
-int ANeuralNetworksExecution_getOutputOperandRank(ANeuralNetworksExecution* execution,
-                                                  int32_t index, uint32_t* rank) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_getOutputOperandRank is called ");
-    if (rank == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_getOutputOperandRank get a nullptr");
+int ANeuralNetworksExecution_setReusable(ANeuralNetworksExecution* execution, bool reusable) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->GetOutputOperandRank(index, rank);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setReusable(reusable);
 }
 
-int ANeuralNetworksExecution_getOutputOperandDimensions(ANeuralNetworksExecution* execution,
-                                                        int32_t index, uint32_t* dimensions) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_getOutputOperandDimensions is called ");
-    if (dimensions == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_getOutputOperandDimensions get a nullptr");
+int ANeuralNetworksExecution_setTimeout(ANeuralNetworksExecution* execution, uint64_t duration) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->GetOutputOperandDimensions(index, dimensions);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setTimeout(Duration(duration));
+}
+
+int ANeuralNetworksExecution_setLoopTimeout(ANeuralNetworksExecution* execution,
+                                            uint64_t duration) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setLoopTimeout(Duration(duration));
+}
+
+int ANeuralNetworksExecution_setMeasureTiming(ANeuralNetworksExecution* execution, bool measure) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setMeasureTiming(measure);
+}
+
+int ANeuralNetworksExecution_enableInputAndOutputPadding(ANeuralNetworksExecution* execution,
+                                                         bool enable) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksExecution_setInput(ANeuralNetworksExecution* execution, int32_t index,
                                       const ANeuralNetworksOperandType* type, const void* buffer,
                                       size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setInput is called ");
-    if (!execution || (!buffer && length != 0)) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setInput passed a nullptr");
+    LOGV(__func__);
+    if (execution == nullptr || (buffer == nullptr && length != 0)) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->SetInput(index, type, buffer, length);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setInput(index, type, buffer, length);
 }
 
 int ANeuralNetworksExecution_setInputFromMemory(ANeuralNetworksExecution* execution, int32_t index,
                                                 const ANeuralNetworksOperandType* type,
                                                 const ANeuralNetworksMemory* memory, size_t offset,
                                                 size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setInputFromMemory is called ");
-    if (!execution || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setInputFromMemory passed a nullptr");
+    LOGV(__func__);
+    if (execution == nullptr || memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    const Memory* mem = reinterpret_cast<const Memory*>(memory);
-    return e->SetInputFromMemory(index, type, mem, offset, length);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    const auto* mem = reinterpret_cast<const IMemory*>(memory);
+    return exec->setInputFromMemory(index, type, mem, offset, length);
 }
 
 int ANeuralNetworksExecution_setOutput(ANeuralNetworksExecution* execution, int32_t index,
                                        const ANeuralNetworksOperandType* type, void* buffer,
                                        size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setOutput is called ");
-    if (!execution || (!buffer && length != 0)) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setInput passed a nullptr");
+    LOGV(__func__);
+    if (execution == nullptr || (buffer == nullptr && length != 0)) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->SetOutput(index, type, buffer, length);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->setOutput(index, type, buffer, length);
 }
 
 int ANeuralNetworksExecution_setOutputFromMemory(ANeuralNetworksExecution* execution, int32_t index,
                                                  const ANeuralNetworksOperandType* type,
                                                  const ANeuralNetworksMemory* memory, size_t offset,
                                                  size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setOutputFromMemory is called ");
-    if (!execution || !memory) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setOutputFromMemory passed a nullptr");
+    LOGV(__func__);
+    if (execution == nullptr || memory == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    const Memory* mem = reinterpret_cast<const Memory*>(memory);
-    return e->SetOutputFromMemory(index, type, mem, offset, length);
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    const auto* mem = reinterpret_cast<const IMemory*>(memory);
+    return exec->setOutputFromMemory(index, type, mem, offset, length);
+}
+
+int ANeuralNetworksExecution_compute(ANeuralNetworksExecution* execution) {
+    LOGV(__func__);
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    return exec->compute();
 }
 
 int ANeuralNetworksExecution_startCompute(ANeuralNetworksExecution* execution,
                                           ANeuralNetworksEvent** event) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_startCompute is called ");
+    LOGV(__func__);
+    if (event == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+    if (execution == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        *event = nullptr;
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
 
-    return ANEURALNETWORKS_NO_ERROR;
+    auto* exec = reinterpret_cast<Execution*>(execution);
+    auto* e = exec->createSyncEvent();
+    *event = reinterpret_cast<ANeuralNetworksEvent*>(e);
+
+    return exec->startCompute();
 }
 
-int ANeuralNetworksExecution_setTimeout(ANeuralNetworksExecution* execution, uint64_t duration) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setTimeout is called ");
+int ANeuralNetworksExecution_getDuration(const ANeuralNetworksExecution* execution,
+                                         int32_t durationCode, uint64_t* duration) {
+    LOGV(__func__);
+    if (execution == nullptr || duration == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
 
-    return ANEURALNETWORKS_NO_ERROR;
+    const auto* exec = reinterpret_cast<const Execution*>(execution);
+    return exec->getDuration(static_cast<DurationCode>(durationCode), duration);
+}
+
+int ANeuralNetworksExecution_getOutputOperandRank(ANeuralNetworksExecution* execution,
+                                                  int32_t index, uint32_t* rank) {
+    LOGV(__func__);
+    if (rank == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    const auto* exec = reinterpret_cast<const Execution*>(execution);
+    return exec->getOutputOperandRank(index, rank);
+}
+
+int ANeuralNetworksExecution_getOutputOperandDimensions(ANeuralNetworksExecution* execution,
+                                                        int32_t index, uint32_t* dimensions) {
+    LOGV(__func__);
+    if (dimensions == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    const auto* exec = reinterpret_cast<const Execution*>(execution);
+    return exec->getOutputOperandDimensions(index, dimensions);
 }
 
 int ANeuralNetworksEvent_wait(ANeuralNetworksEvent* event) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "=====ANeuralNetworksEvent_wait is called ");
+    LOGV(__func__);
 
-    return ANEURALNETWORKS_NO_ERROR;
+    if (event == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* e = reinterpret_cast<IEvent*>(event);
+    return e->wait();
 }
 
 void ANeuralNetworksEvent_free(ANeuralNetworksEvent* event) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME, "=====ANeuralNetworksEvent_free is called ");
-    if (!event) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksEvent_free passed a nullptr");
+    LOGV(__func__);
+    if (event == nullptr) {
+        LOGD("%s passed a nullptr", __func__);
         return;
     }
-}
 
-int ANeuralNetworksExecution_setLoopTimeout(ANeuralNetworksExecution* execution,
-                                            uint64_t duration) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setLoopTimeout is called ");
-    if (!execution) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setLoopTimeout passed a nullptr");
-        return ANEURALNETWORKS_UNEXPECTED_NULL;
-    }
-    auto e = reinterpret_cast<Execution*>(execution);
-    return e->SetLoopTimeout(duration);
+    auto* e = reinterpret_cast<IEvent*>(event);
+    e->wait();
+    delete e;
 }
 
 uint64_t ANeuralNetworks_getDefaultLoopTimeout() {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworks_getDefaultLoopTimeout is called ");
-    return operation_while::kTimeoutNsDefault;
+    LOGV(__func__);
+
+    constexpr auto kDefaultLoopTimeoutDuration = std::chrono::seconds{2};
+    constexpr uint64_t kDefaultLoopTimeoutNs =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(kDefaultLoopTimeoutDuration)
+                    .count();
+
+    return kDefaultLoopTimeoutNs;
 }
 
 uint64_t ANeuralNetworks_getMaximumLoopTimeout() {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworks_getMaximumLoopTimeout is called ");
-    return operation_while::kTimeoutNsMaximum;
+    LOGV(__func__);
+
+    constexpr auto kMaximumLoopTimeoutDuration = std::chrono::seconds{15};
+    constexpr uint64_t kMaximumLoopTimeoutNs =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(kMaximumLoopTimeoutDuration)
+                    .count();
+
+    return kMaximumLoopTimeoutNs;
 }
 
 int ANeuralNetworksDevice_getExtensionSupport(const ANeuralNetworksDevice* device,
                                               const char* extensionName,
                                               bool* isExtensionSupported) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksDevice_getExtensionSupport is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -868,8 +875,7 @@ int ANeuralNetworksModel_getExtensionOperandType(ANeuralNetworksModel* model,
                                                  const char* extensionName,
                                                  uint16_t operandCodeWithinExtension,
                                                  int32_t* type) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_getExtensionOperandType is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -878,140 +884,185 @@ int ANeuralNetworksModel_getExtensionOperationType(ANeuralNetworksModel* model,
                                                    const char* extensionName,
                                                    uint16_t operationCodeWithinExtension,
                                                    ANeuralNetworksOperationType* type) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_getExtensionOperationType is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksModel_setOperandExtensionData(ANeuralNetworksModel* model, int32_t index,
                                                  const void* data, size_t length) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksModel_setOperandExtensionData is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int ANeuralNetworksEvent_createFromSyncFenceFd(int syncFenceFd, ANeuralNetworksEvent** event) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksEvent_createFromSyncFenceFd is called ");
+int ANeuralNetworksEvent_createFromSyncFenceFd(int sync_fence_fd, ANeuralNetworksEvent** event) {
+    LOGV(__func__);
+
     if (event == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksEvent_createFromSyncFenceFd passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    if (syncFenceFd <= 0) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksEvent_createFromSyncFenceFd passed an invalid fd");
+
+    if (sync_fence_fd <= 0) {
+        LOGE("%s passed an invalid sync fence fd", __func__);
         *event = nullptr;
         return ANEURALNETWORKS_BAD_DATA;
     }
+
+    auto* e = new SyncFenceEvent(sync_fence_fd);
+    *event = reinterpret_cast<ANeuralNetworksEvent*>(e);
+
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int ANeuralNetworksEvent_getSyncFenceFd(const ANeuralNetworksEvent* event, int* syncFenceFd) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksEvent_getSyncFenceFd is called ");
+int ANeuralNetworksEvent_getSyncFenceFd(const ANeuralNetworksEvent* event, int* sync_fence_fd) {
+    LOGV(__func__);
+
+    if (sync_fence_fd == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    if (event == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        *sync_fence_fd = -1;
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    const auto* e = reinterpret_cast<const IEvent*>(event);
+    // The client owns the dupped fd, and is responsible for closing it.
+    int fd = e->getSyncFenceFd(true);
+    if (fd <= 0) {
+        LOGE("%s unable to get valid sync fence fd", __func__);
+        *sync_fence_fd = -1;
+        return ANEURALNETWORKS_BAD_DATA;
+    }
+
+    *sync_fence_fd = fd;
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksExecution_startComputeWithDependencies(
         ANeuralNetworksExecution* execution, const ANeuralNetworksEvent* const* dependencies,
-        uint32_t numOfDependencies, uint64_t duration, ANeuralNetworksEvent** event) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_startComputeWithDependencies is "
-                        "called ");
-    if (!execution || !event) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksEvent_createFromSyncFenceFd passed a nullptr");
+        uint32_t num_dependencies, uint64_t duration, ANeuralNetworksEvent** event) {
+    LOGV(__func__);
+
+    if (event == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
-    return ANEURALNETWORKS_NO_ERROR;
+    if (execution == nullptr || (num_dependencies != 0 && dependencies == nullptr)) {
+        LOGE("%s passed a nullptr", __func__);
+        *event = nullptr;
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    auto* exec = reinterpret_cast<Execution*>(execution);
+
+    if (duration != 0) {
+        const auto* compilation = exec->getCompilation();
+        if (compilation->getDevices().size() != 1) {
+            LOGE("%s if the duration is non-zero, the "
+                 "ANeuralNetworksExecution must have been created from an "
+                 "ANeuralNetworksCompilation which in turn was created from "
+                 "ANeuralNetworksCompilation_createForDevices with numDevices = 1",
+                 __func__);
+            return ANEURALNETWORKS_BAD_DATA;
+        }
+    }
+
+    for (size_t i = 0; i < num_dependencies; i++) {
+        if (dependencies[i] == nullptr) {
+            LOGE("%s passed a nullptr", __func__);
+            *event = nullptr;
+            return ANEURALNETWORKS_UNEXPECTED_NULL;
+        }
+
+        const auto* e = reinterpret_cast<const IEvent*>(dependencies[i]);
+        int waitStatus = e->wait();
+        if (waitStatus != ANEURALNETWORKS_NO_ERROR) {
+            *event = nullptr;
+            return waitStatus;
+        }
+    }
+
+    // The SL don't support creating sync fence.
+    auto* e = new SyncFenceEvent(-1);
+    *event = reinterpret_cast<ANeuralNetworksEvent*>(e);
+    return ANeuralNetworksExecution_compute(execution);
+
+    // return ANeuralNetworksExecution_startCompute(execution, event);
 }
 
 int64_t ANeuralNetworks_getRuntimeFeatureLevel() {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworks_getRuntimeFeatureLevel is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_FEATURE_LEVEL_7;
 }
 
-int ANeuralNetworksExecution_enableInputAndOutputPadding(ANeuralNetworksExecution* execution,
-                                                         bool enable) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_enableInputAndOutputPadding is called ");
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
 int ANeuralNetworksCompilation_getPreferredMemoryAlignmentForInput(
         const ANeuralNetworksCompilation* compilation, uint32_t index, uint32_t* alignment) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_"
-                        "getPreferredMemoryAlignmentForInput is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksCompilation_getPreferredMemoryPaddingForInput(
         const ANeuralNetworksCompilation* compilation, uint32_t index, uint32_t* padding) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_"
-                        "getPreferredMemoryPaddingForInput is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksCompilation_getPreferredMemoryAlignmentForOutput(
         const ANeuralNetworksCompilation* compilation, uint32_t index, uint32_t* alignment) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_"
-                        "getPreferredMemoryAlignmentForOutput is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int ANeuralNetworksCompilation_getPreferredMemoryPaddingForOutput(
         const ANeuralNetworksCompilation* compilation, uint32_t index, uint32_t* padding) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksCompilation_"
-                        "getPreferredMemoryPaddingForOutput is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
-}
-
-int ANeuralNetworksExecution_setReusable(ANeuralNetworksExecution* execution, bool reusable) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====ANeuralNetworksExecution_setReusable is called ");
-    if (!execution) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "ANeuralNetworksExecution_setReusable passed a nullptr");
-        return ANEURALNETWORKS_UNEXPECTED_NULL;
-    }
-    Execution* e = reinterpret_cast<Execution*>(execution);
-    return e->SetReusable(reusable);
 }
 
 int SL_ANeuralNetworksCompilation_setCachingFromFds(ANeuralNetworksCompilation* compilation,
                                                     const int* modelCacheFds,
                                                     const uint32_t numModelCacheFiles,
-                                                    const int* dataCacheFds,
-                                                    const uint32_t numDataCacheFiles,
+                                                    const int* /*dataCacheFds*/,
+                                                    const uint32_t /*numDataCacheFiles*/,
                                                     const uint8_t* token) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksCompilation_setCachingFromFds is called ");
+    LOGV(__func__);
+    if (compilation == nullptr ||
+        (numModelCacheFiles != 0 && (modelCacheFds == nullptr || token == nullptr))) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
 
-    return ANEURALNETWORKS_NO_ERROR;
+    if (Compilation::kNumModelCacheFiles == 0) {
+        LOGW("%s model cache is not enabled", __func__);
+        return ANEURALNETWORKS_NO_ERROR;
+    }
+
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    return c->setCaching(modelCacheFds[0], token);
 }
 
 int SL_ANeuralNetworksDevice_getNumberOfCacheFilesNeeded(const ANeuralNetworksDevice* device,
                                                          uint32_t* numModelCacheFiles,
                                                          uint32_t* numDataCacheFiles) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_getNumberOfCacheFilesNeeded is called ");
-    if (numModelCacheFiles) *numModelCacheFiles = 0;
-    if (numDataCacheFiles) *numDataCacheFiles = 0;
+    LOGV(__func__);
+    if (numDataCacheFiles == nullptr || numDataCacheFiles == nullptr) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+
+    *numModelCacheFiles = Compilation::kNumModelCacheFiles;
+    *numDataCacheFiles = Compilation::kNumDataCacheFiles;
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -1019,88 +1070,61 @@ int SL_ANeuralNetworksDevice_getNumberOfCacheFilesNeeded(const ANeuralNetworksDe
 int SL_ANeuralNetworksDevice_getPerformanceInfo(
         const ANeuralNetworksDevice* device, int32_t performanceInfoKind,
         SL_ANeuralNetworksPerformanceInfo* performanceInfo) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_getPerformanceInfo is called ");
-    if (performanceInfo) *performanceInfo = {.execTime = 0.1f, .powerUsage = 0.1f};
+    LOGV(__func__);
 
     if (device == nullptr || performanceInfo == nullptr) {
-        __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                            "SL_ANeuralNetworksDevice_getPerformanceInfo passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
 
-    constexpr auto conv = [](const Capabilities::PerformanceInfo& info) {
-        return SL_ANeuralNetworksPerformanceInfo{.execTime = info.execTime,
-                                                 .powerUsage = info.powerUsage};
-    };
+    const auto* dev = reinterpret_cast<const Device*>(device);
+    auto perfInfo = dev->queryPerformanceInfo(performanceInfoKind);
 
-    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
-    const Capabilities& capabilities = d->getCapabilities();
-
-    switch (performanceInfoKind) {
-        case SL_ANEURALNETWORKS_CAPABILITIES_PERFORMANCE_RELAXED_SCALAR:
-            *performanceInfo = conv(capabilities.relaxedFloat32toFloat16PerformanceScalar);
-            return ANEURALNETWORKS_NO_ERROR;
-        case SL_ANEURALNETWORKS_CAPABILITIES_PERFORMANCE_RELAXED_TENSOR:
-            *performanceInfo = conv(capabilities.relaxedFloat32toFloat16PerformanceTensor);
-            return ANEURALNETWORKS_NO_ERROR;
-        case SL_ANEURALNETWORKS_CAPABILITIES_PERFORMANCE_IF:
-            *performanceInfo = conv(capabilities.ifPerformance);
-            return ANEURALNETWORKS_NO_ERROR;
-        case SL_ANEURALNETWORKS_CAPABILITIES_PERFORMANCE_WHILE:
-            *performanceInfo = conv(capabilities.whilePerformance);
-            return ANEURALNETWORKS_NO_ERROR;
-    }
-    __android_log_print(
-            ANDROID_LOG_VERBOSE, TAG_NAME,
-            "SL_ANeuralNetworksDevice_getPerformanceInfo passed unknown performanceInfoKind ");
-    return ANEURALNETWORKS_BAD_DATA;
+    performanceInfo->execTime = perfInfo.execTimeRatio;
+    performanceInfo->powerUsage = perfInfo.powerUsageRatio;
+    return ANEURALNETWORKS_NO_ERROR;
 }
 
 int SL_ANeuralNetworksDevice_forEachOperandPerformanceInfo(
         const ANeuralNetworksDevice* device, void* context,
         void (*callback)(SL_ANeuralNetworksOperandPerformanceInfo, void*)) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_forEachOperandPerformanceInfo "
-                        "is called ");
+    LOGV(__func__);
+
     if (device == nullptr || context == nullptr || callback == nullptr) {
-        __android_log_print(
-                ANDROID_LOG_VERBOSE, TAG_NAME,
-                "SL_ANeuralNetworksDevice_forEachOperandPerformanceInfo passed a nullptr");
+        LOGE("%s passed a nullptr", __func__);
         return ANEURALNETWORKS_UNEXPECTED_NULL;
     }
 
-    constexpr auto conv = [](const Capabilities::OperandPerformance& operandPerformance) {
-        return SL_ANeuralNetworksOperandPerformanceInfo{
-                .operandType = static_cast<int32_t>(operandPerformance.type),
-                .performanceInfo = {.execTime = operandPerformance.info.execTime,
-                                    .powerUsage = operandPerformance.info.powerUsage},
-        };
-    };
-
-    const VsiDevice* d = reinterpret_cast<const VsiDevice*>(device);
-    const Capabilities& capabilities = d->getCapabilities();
-
-    for (const auto& operandPerformance : capabilities.operandPerformance.Sorted) {
-        const SL_ANeuralNetworksOperandPerformanceInfo opPerf = conv(operandPerformance);
-        callback(opPerf, context);
+    const auto* dev = reinterpret_cast<const Device*>(device);
+    for (auto operandType : Device::kSupportedOperandTypes) {
+        auto perfInfo = dev->queryOperandPerformanceInfo(operandType);
+        auto operandPerformanceInfo = SL_ANeuralNetworksOperandPerformanceInfo{
+                .operandType = static_cast<int32_t>(operandType),
+                .performanceInfo = {
+                        .execTime = perfInfo.execTimeRatio,
+                        .powerUsage = perfInfo.powerUsageRatio,
+                }};
+        callback(operandPerformanceInfo, context);
     }
+
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int SL_ANeuralNetworksDevice_getVendorExtensionCount(const ANeuralNetworksDevice* device,
                                                      uint32_t* vendorExtensionCount) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_getVendorExtensionCount is called ");
-
+    LOGV(__func__);
+    if (device == nullptr || vendorExtensionCount == nullptr) {
+        LOGE("SL_ANeuralNetworksDevice_getVendorExtensionCount passed a nullptr");
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
+    *vendorExtensionCount = 0;
     return ANEURALNETWORKS_NO_ERROR;
 }
 
 int SL_ANeuralNetworksDevice_getVendorExtensionName(const ANeuralNetworksDevice* device,
                                                     uint32_t vendorExtensionIndex,
                                                     const char** extensionName) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_getVendorExtensionName is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -1108,9 +1132,7 @@ int SL_ANeuralNetworksDevice_getVendorExtensionName(const ANeuralNetworksDevice*
 int SL_ANeuralNetworksDevice_forEachVendorExtensionOperandTypeInformation(
         const ANeuralNetworksDevice* device, uint32_t vendorExtensionIndex, void* context,
         void (*callback)(SL_ANeuralNetworksExtensionOperandTypeInformation, void*)) {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "=====SL_ANeuralNetworksDevice_"
-                        "forEachVendorExtensionOperandTypeInformation is called ");
+    LOGV(__func__);
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -1227,8 +1249,7 @@ NnApiSLDriverImplFL7 slDriverImpl{
 
 extern "C" {
 NnApiSLDriverImpl* ANeuralNetworks_getSLDriverImpl() {
-    __android_log_print(ANDROID_LOG_VERBOSE, TAG_NAME,
-                        "======ANeuralNetworks_getSLDriverImpl is called !!======");
+    LOGV(__func__);
     return reinterpret_cast<NnApiSLDriverImpl*>(&slDriverImpl);
 }
 }

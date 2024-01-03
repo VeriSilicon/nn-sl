@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,639 +21,575 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
-#include "Model.h"
 
-#include <cassert>
-#include <cstring>
+#include "Model.h"
 
 #include "Utils.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
 
-int Model::AddOperand(const ANeuralNetworksOperandType& type) {
+int Model::addOperand(const ANeuralNetworksOperandType& type) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::addOperand cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
 
-    if (type.dimensionCount) {  // implies tensor
-        if (type.dimensions == nullptr) {
-            std::cout << "Error: get an invalid operand" << std::endl;
+    auto operandType = static_cast<OperandType>(type.type);
+    if (operandType == OperandType::TENSOR_FLOAT32 || operandType == OperandType::TENSOR_FLOAT16 ||
+        operandType == OperandType::TENSOR_INT32 || operandType == OperandType::TENSOR_BOOL8 ||
+        operandType == OperandType::TENSOR_QUANT8_ASYMM ||
+        operandType == OperandType::TENSOR_QUANT8_SYMM ||
+        operandType == OperandType::TENSOR_QUANT8_ASYMM_SIGNED ||
+        operandType == OperandType::TENSOR_QUANT8_SYMM_PER_CHANNEL ||
+        operandType == OperandType::TENSOR_QUANT16_ASYMM ||
+        operandType == OperandType::TENSOR_QUANT16_SYMM) {
+        // Implies tensor.
+        if (type.dimensionCount == 0) {
+            LOGE("Model::addOperand passed a tensor but has zero rank");
             return ANEURALNETWORKS_BAD_DATA;
         }
+        auto shape = std::vector<uint32_t>(type.dimensions, type.dimensions + type.dimensionCount);
         slang::type::tensor_storage tensor = {
                 .dtype = MapDataType(type.type),
                 .qtype = MapQuantType(type.type),
-                .shape = std::vector<uint32_t>(type.dimensions,
-                                               type.dimensions + type.dimensionCount),
+                .shape = shape,
                 .scale = type.scale,
-                .zero_point = type.zeroPoint};
-        tensors_.insert({operand_id_++, tensor});
-    } else {  // implies scalar
-        if (type.dimensions != nullptr) {
-            std::cout << "Error: get an invalid operand" << std::endl;
+                .zero_point = type.zeroPoint,
+        };
+        tensors_.insert({numOperands_, tensor});
+    } else if (operandType == OperandType::FLOAT32 || operandType == OperandType::FLOAT16 ||
+               operandType == OperandType::INT32 || operandType == OperandType::UINT32 ||
+               operandType == OperandType::BOOL) {
+        // Implies scalar.
+        if (type.dimensionCount != 0) {
+            LOGE("Model::addOperand passed a scalar but has non-zero rank");
             return ANEURALNETWORKS_BAD_DATA;
         }
         slang::type::scalar_storage scalar = {.dtype = MapDataType(type.type)};
-        scalars_.insert({operand_id_++, scalar});
+        scalars_.insert({numOperands_, scalar});
+    } else {
+        LOGW("Model::addOperand passed an operand with unsupported type: %d", operandType);
     }
+
+    numOperands_++;
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::SetOperandSymmPerChannelQuantParams(
+int Model::setOperandSymmPerChannelQuantParams(
         int32_t index, const ANeuralNetworksSymmPerChannelQuantParams& channelQuant) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::setOperandSymmPerChannelQuantParams cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
-    if (index >= operand_id_) {
-        std::cout << "ANeuralNetworksModel_SetOperandSymmPerChannelQuantParams get an invalid index"
-                  << std::endl;
+
+    if (index < 0 || index >= numOperands_) {
+        LOGE("Model::setOperandSymmPerChannelQuantParams passed an invalid operand index");
         return ANEURALNETWORKS_BAD_DATA;
     }
+
     if (tensors_.find(index) != tensors_.end()) {
         // reverse channel_dim axis
-        uint32_t channel_dim = tensors_[index].shape.size() - channelQuant.channelDim - 1;
-        tensors_[index].channel_dim = channel_dim;
+        uint32_t channelDim = tensors_[index].shape.size() - channelQuant.channelDim - 1;
+        tensors_[index].channel_dim = channelDim;
         tensors_[index].per_channel_scales.assign(channelQuant.scales,
                                                   channelQuant.scales + channelQuant.scaleCount);
         tensors_[index].per_channel_zero_points.assign(channelQuant.scaleCount, 0);
     } else {
-        std::cout << "Error: Invalid operand index." << std::endl;
+        LOGE("Model::setOperandSymmPerChannelQuantParams passed an invalid operand index");
         return ANEURALNETWORKS_BAD_DATA;
     }
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::SetOperandValue(uint32_t index, const void* buffer, size_t length) {
+int Model::setOperandValue(int32_t index, const void* buffer, size_t length) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::setOperandValue cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
-    if (index >= operand_id_) {
-        std::cout << "ANeuralNetworksModel_setOperandValue get an invalid index" << std::endl;
+
+    if (index < 0 || index >= numOperands_) {
+        LOGE("Model::setOperandValue passed an invalid operand index");
         return ANEURALNETWORKS_BAD_DATA;
     }
-    if (length > 0xFFFFFFFF) {
-        std::cout << "ANeuralNetworksModel_setOperandValue value length of " << length
-                  << " exceeds max size" << std::endl;
-        return ANEURALNETWORKS_BAD_DATA;
-    }
+
     if (buffer == nullptr) {
-        std::cout << "Warning: Operand index " << index << " is empty" << std::endl;
+        LOGW("Model::setOperandValue operand (%d) is marked as optional", index);
         return ANEURALNETWORKS_NO_ERROR;
     }
-    if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
-        const uint8_t* copied_values = reinterpret_cast<const uint8_t*>(buffer);
-        constant_copy_.insert({index, std::vector<uint8_t>(copied_values, copied_values + length)});
-    }
 
-    if (tensors_.find(index) != tensors_.end()) {
-        tensors_[index].attr = slang::type::tensor_attr::kCONSTANT;
-        if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
-            tensors_[index].data = constant_copy_[index].data();
-            tensors_[index].data_length = constant_copy_[index].size();
-        } else {
-            tensors_[index].data = buffer;
-            tensors_[index].data_length = length;
+    if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
+        size_t storageOffset = constantCopyStorage_.size();
+        size_t alignedLength = alignSize(length, 4);
+
+        constantCopyStorage_.resize(storageOffset + alignedLength);
+
+        uint8_t* storageBuffer = constantCopyStorage_.data() + storageOffset;
+        std::copy_n(reinterpret_cast<const uint8_t*>(buffer), length, storageBuffer);
+
+        operandValueInfos_[index] = {
+                .size = length,
+                .offset = storageOffset,
+                .buffer = nullptr,
+        };
+
+        if (auto it = tensors_.find(index); it != tensors_.end()) {
+            auto& [_, tensor] = *it;
+            tensor.data.assign(storageBuffer, storageBuffer + length);
+        }
+
+        if (auto it = scalars_.find(index); it != scalars_.end()) {
+            auto& [_, scalar] = *it;
+            scalar.data.assign(storageBuffer, storageBuffer + length);
         }
     } else {
-        scalars_[index].data = constant_copy_[index];
+        operandValueInfos_[index] = {
+                .size = length,
+                .buffer = buffer,
+        };
+    }
+
+    if (auto it = tensors_.find(index); it != tensors_.end()) {
+        auto& [_, tensor] = *it;
+        tensor.attr = slang::type::tensor_attr::kCONSTANT;
     }
 
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t offset,
+int Model::setOperandValueFromMemory(int32_t index, const IMemory* memory, size_t offset,
                                      size_t length) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::setOperandValueFromMemory cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
-    if (index >= operand_id_) {
-        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get an invalid index"
-                  << std::endl;
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    if (length > 0xFFFFFFFF) {
-        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory value length of " << length
-                  << " exceeds max size" << std::endl;
-        return ANEURALNETWORKS_BAD_DATA;
-    }
-    if (memory == nullptr) {
-        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get a null memory"
-                  << std::endl;
+
+    if (index < 0 || index >= numOperands_) {
+        LOGE("Model::setOperandValueFromMemory passed an invalid operand index");
         return ANEURALNETWORKS_BAD_DATA;
     }
 
-    if (tensors_.find(index) != tensors_.end()) {
-        tensors_[index].attr = slang::type::tensor_attr::kCONSTANT;
-        if (memory->IsCreateFromAHWB()) {
-            auto mem = const_cast<Memory*>(memory);
-            auto status = mem->PraseAHWB(mem->AHWB());
-            if (status != ANEURALNETWORKS_NO_ERROR) return status;
-        }
-        tensors_[index].data = (uint8_t*)memory->Data() + offset;
-        tensors_[index].data_length = length;
-    } else {
-        std::cout << "ANeuralNetworksModel_setOperandValueFromMemory get an invalid index"
-                  << std::endl;
-        return ANEURALNETWORKS_BAD_DATA;
+    int status = memory->validate(nullptr, IOType::NONE, index, nullptr, offset, length);
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("Model::setOperandValueFromMemory failed to validate memory");
+        return status;
     }
+
+    if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
+        auto mapping = memory->map();
+        if (mapping.getStatus() != ANEURALNETWORKS_NO_ERROR) {
+            LOGE("Model::setOperandValueFromMemory failed to map memory");
+            return mapping.getStatus();
+        }
+
+        const uint8_t* data = reinterpret_cast<uint8_t*>(mapping.getData()) + offset;
+
+        if (auto it = tensors_.find(index); it != tensors_.end()) {
+            auto& [_, tensor] = *it;
+            tensor.data.assign(data, data + length);
+        }
+
+        if (auto it = scalars_.find(index); it != scalars_.end()) {
+            auto& [_, scalar] = *it;
+            scalar.data.assign(data, data + length);
+        }
+    }
+
+    operandValueInfos_[index] = {
+            .offset = offset,
+            .memory = memory,
+    };
+
+    if (auto it = tensors_.find(index); it != tensors_.end()) {
+        auto& [_, tensor] = *it;
+        tensor.attr = slang::type::tensor_attr::kCONSTANT;
+    }
+
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
-                        const uint32_t* inputs, uint32_t outputCount, const uint32_t* outputs) {
+int Model::setOperandValueFromModel(int32_t index, const Model* reference) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::setOperandValueFromModel cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
+
+    if (!reference->isFinished()) {
+        LOGE("Model::setOperandValueFromModel reference model is not finished");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+    referenceModels_.push_back(reference);
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Model::addOperation(ANeuralNetworksOperationType type, uint32_t inputCount,
+                        const uint32_t* inputs, uint32_t outputCount, const uint32_t* outputs) {
+    if (finished_) {
+        LOGE("Model::addOperation cannot modify a finished model");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    auto opInputs = std::vector<uint32_t>(inputs, inputs + inputCount);
+    auto opOutputs = std::vector<uint32_t>(outputs, outputs + outputCount);
+
+    bool hasEmptyScalar = std::any_of(opInputs.cbegin(), opInputs.cend(), [this](uint32_t i) {
+        if (auto it = scalars_.find(i); it != scalars_.cend()) {
+            auto [_, scalar] = *it;
+            return scalar.data.empty();
+        }
+        return false;
+    });
+
+    if (hasEmptyScalar) {
+        LOGW("Model::addOperation OP type: %d has empty input scalars", type);
+        opCreators_.push_back(std::make_shared<PlaceHolderOpCreator>(type));
+        opSupported_.push_back(false);
+        return ANEURALNETWORKS_NO_ERROR;
+    }
+
+    std::shared_ptr<OpCreator> opCreator;
     switch (type) {
         case ANEURALNETWORKS_ABS:
-            op_creators_.push_back(std::make_shared<AbsCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<AbsCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_ADD:
-            op_creators_.push_back(std::make_shared<AddCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<AddCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_ARGMAX:
-            op_creators_.push_back(std::make_shared<ArgmaxCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ArgmaxCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_ARGMIN:
-            op_creators_.push_back(std::make_shared<ArgminCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ArgminCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_AVERAGE_POOL_2D:
-            op_creators_.push_back(std::make_shared<AveragePool2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<AveragePool2DCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_BATCH_MATMUL:
-            op_creators_.push_back(std::make_shared<BatchMatmulCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<BatchMatmulCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_BATCH_TO_SPACE_ND:
-            op_creators_.push_back(std::make_shared<BatchToSpaceCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<BatchToSpaceCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_CAST:
-            op_creators_.push_back(std::make_shared<CastCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<CastCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_CHANNEL_SHUFFLE:
-            op_creators_.push_back(std::make_shared<ChannelShuffleCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ChannelShuffleCreator>(opInputs, opOutputs, tensors_,
+                                                                scalars_);
             break;
         case ANEURALNETWORKS_CONCATENATION:
-            op_creators_.push_back(std::make_shared<ConcatenationCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<ConcatenationCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_CONV_2D:
-            op_creators_.push_back(std::make_shared<Conv2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<Conv2DCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_DEQUANTIZE:
-            op_creators_.push_back(std::make_shared<DequantizeCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<DequantizeCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_DEPTHWISE_CONV_2D:
-            op_creators_.push_back(std::make_shared<DepthwiseConv2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<DepthwiseConv2DCreator>(opInputs, opOutputs, tensors_,
+                                                                 scalars_);
             break;
         case ANEURALNETWORKS_DEPTH_TO_SPACE:
-            op_creators_.push_back(std::make_shared<DepthToSpaceCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<DepthToSpaceCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_DIV:
-            op_creators_.push_back(std::make_shared<DivCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<DivCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_EMBEDDING_LOOKUP:
-            op_creators_.push_back(std::make_shared<EmbeddingLookupCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<EmbeddingLookupCreator>(opInputs, opOutputs, tensors_,
+                                                                 scalars_);
             break;
         case ANEURALNETWORKS_EQUAL:
-            op_creators_.push_back(std::make_shared<EqualCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<EqualCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_EXP:
-            op_creators_.push_back(std::make_shared<ExpCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ExpCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_EXPAND_DIMS:
-            op_creators_.push_back(std::make_shared<ExpandDimsCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<ExpandDimsCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_ELU:
-            op_creators_.push_back(std::make_shared<EluCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<EluCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_FLOOR:
-            op_creators_.push_back(std::make_shared<FloorCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<FloorCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_FULLY_CONNECTED:
-            op_creators_.push_back(std::make_shared<FullyConnectedCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<FullyConnectedCreator>(opInputs, opOutputs, tensors_,
+                                                                scalars_);
             break;
         case ANEURALNETWORKS_GATHER:
-            op_creators_.push_back(std::make_shared<GatherCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<GatherCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_GREATER:
-            op_creators_.push_back(std::make_shared<GreaterCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<GreaterCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_GREATER_EQUAL:
-            op_creators_.push_back(std::make_shared<GreaterEqualCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<GreaterEqualCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_GROUPED_CONV_2D:
-            op_creators_.push_back(std::make_shared<GroupedConv2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<GroupedConv2DCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_HASHTABLE_LOOKUP:
-            op_creators_.push_back(std::make_shared<HashtableLookupCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<HashtableLookupCreator>(opInputs, opOutputs, tensors_,
+                                                                 scalars_);
             break;
         case ANEURALNETWORKS_HARD_SWISH:
-            op_creators_.push_back(std::make_shared<HardSwishCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<HardSwishCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_INSTANCE_NORMALIZATION:
-            op_creators_.push_back(std::make_shared<InstanceNormalizationCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<InstanceNormalizationCreator>(opInputs, opOutputs,
+                                                                       tensors_, scalars_);
             break;
         case ANEURALNETWORKS_L2_NORMALIZATION:
-            op_creators_.push_back(std::make_shared<L2NormalizationCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<L2NormalizationCreator>(opInputs, opOutputs, tensors_,
+                                                                 scalars_);
             break;
         case ANEURALNETWORKS_LESS_EQUAL:
-            op_creators_.push_back(std::make_shared<LessEqualCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LessEqualCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LESS:
-            op_creators_.push_back(std::make_shared<LessCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LessCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOG:
-            op_creators_.push_back(std::make_shared<LogCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LogCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOCAL_RESPONSE_NORMALIZATION:
-            op_creators_.push_back(std::make_shared<LocalResponseNormalizationCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LocalResponseNormalizationCreator>(opInputs, opOutputs,
+                                                                            tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOGISTIC:
-            op_creators_.push_back(std::make_shared<LogisticCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LogisticCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOGICAL_NOT:
-            op_creators_.push_back(std::make_shared<LogicalNotCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<LogicalNotCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOGICAL_AND:
-            op_creators_.push_back(std::make_shared<LogicalAndCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<LogicalAndCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOGICAL_OR:
-            op_creators_.push_back(std::make_shared<LogicalOrCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<LogicalOrCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_LOG_SOFTMAX:
-            op_creators_.push_back(std::make_shared<LogSoftmaxCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<LogSoftmaxCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_L2_POOL_2D:
-            op_creators_.push_back(std::make_shared<L2Pool2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<L2Pool2DCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MAX_POOL_2D:
-            op_creators_.push_back(std::make_shared<MaxPool2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MaxPool2DCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MEAN:
-            op_creators_.push_back(std::make_shared<MeanCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MeanCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MAXIMUM:
-            op_creators_.push_back(std::make_shared<MaximumCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MaximumCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MINIMUM:
-            op_creators_.push_back(std::make_shared<MinimumCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MinimumCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MIRROR_PAD:
-            op_creators_.push_back(std::make_shared<MirrorPadCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MirrorPadCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_MUL:
-            op_creators_.push_back(std::make_shared<MulCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<MulCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_NEG:
-            op_creators_.push_back(std::make_shared<NegCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<NegCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_NOT_EQUAL:
-            op_creators_.push_back(std::make_shared<NotEqualCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<NotEqualCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_PACK:
-            op_creators_.push_back(std::make_shared<PackCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<PackCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_PAD:
-            op_creators_.push_back(std::make_shared<PadCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<PadCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_PAD_V2:
-            op_creators_.push_back(std::make_shared<PadV2Creator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<PadV2Creator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_POW:
-            op_creators_.push_back(std::make_shared<PowCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<PowCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_PRELU:
-            op_creators_.push_back(std::make_shared<PreluCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<PreluCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_QUANTIZE:
-            op_creators_.push_back(std::make_shared<QuantizeCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<QuantizeCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_ALL:
-            op_creators_.push_back(std::make_shared<ReduceAllCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReduceAllCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_ANY:
-            op_creators_.push_back(std::make_shared<ReduceAnyCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReduceAnyCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_MAX:
-            op_creators_.push_back(std::make_shared<ReduceMaxCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReduceMaxCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_MIN:
-            op_creators_.push_back(std::make_shared<ReduceMinCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReduceMinCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_PROD:
-            op_creators_.push_back(std::make_shared<ReduceProdCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<ReduceProdCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_REDUCE_SUM:
-            op_creators_.push_back(std::make_shared<ReduceSumCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReduceSumCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RELU:
-            op_creators_.push_back(std::make_shared<ReluCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReluCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RELU1:
-            op_creators_.push_back(std::make_shared<Relu1Creator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<Relu1Creator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RELU6:
-            op_creators_.push_back(std::make_shared<Relu6Creator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<Relu6Creator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RESHAPE:
-            op_creators_.push_back(std::make_shared<ReshapeCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReshapeCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RESIZE_BILINEAR:
-            op_creators_.push_back(std::make_shared<ResizeBilinearCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ResizeBilinearCreator>(opInputs, opOutputs, tensors_,
+                                                                scalars_);
             break;
         case ANEURALNETWORKS_REVERSE:
-            op_creators_.push_back(std::make_shared<ReverseCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<ReverseCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_RESIZE_NEAREST_NEIGHBOR:
-            op_creators_.push_back(std::make_shared<ResizeNearestCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<ResizeNearestCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_ROI_ALIGN:
-            op_creators_.push_back(std::make_shared<RoiAlignCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<RoiAlignCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         // case ANEURALNETWORKS_ROI_POOLING:  // roi_pooling not support at present
         //     op_creators_.push_back(std::make_shared<RoiPoolingCreator>(
-        //             std::vector<uint32_t>(inputs, inputs + inputCount),
-        //             std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+        //             inputsList,
+        //             outputsList, tensors_, scalars_);
         //     break;
         case ANEURALNETWORKS_RSQRT:
-            op_creators_.push_back(std::make_shared<RsqrtCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<RsqrtCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SELECT:
-            op_creators_.push_back(std::make_shared<SelectCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SelectCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SIN:
-            op_creators_.push_back(std::make_shared<SinCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SinCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SLICE:
-            op_creators_.push_back(std::make_shared<SliceCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SliceCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SOFTMAX:
-            op_creators_.push_back(std::make_shared<SoftmaxCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SoftmaxCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SPACE_TO_DEPTH:
-            op_creators_.push_back(std::make_shared<SpaceToDepthCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<SpaceToDepthCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SPACE_TO_BATCH_ND:
-            op_creators_.push_back(std::make_shared<SpaceToBatchCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<SpaceToBatchCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SPLIT:
-            op_creators_.push_back(std::make_shared<SplitCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SplitCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SQUEEZE:
-            op_creators_.push_back(std::make_shared<SqueezeCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SqueezeCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SQRT:
-            op_creators_.push_back(std::make_shared<SqrtCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SqrtCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_STRIDED_SLICE:
-            op_creators_.push_back(std::make_shared<StridedSliceCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator =
+                    std::make_shared<StridedSliceCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_SUB:
-            op_creators_.push_back(std::make_shared<SubCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<SubCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
-        case ANEURALNETWORKS_SVDF:
-            op_creators_.push_back(std::make_shared<SvdfCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
-            break;
+        // case ANEURALNETWORKS_SVDF:  // svdf not support at present
+        //     opCreator = std::make_shared<SvdfCreator>(opInputs, opOutputs, tensors_, scalars_);
+        //     break;
         case ANEURALNETWORKS_TANH:
-            op_creators_.push_back(std::make_shared<TanhCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<TanhCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_TILE:
-            op_creators_.push_back(std::make_shared<TileCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<TileCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_TOPK_V2:
-            op_creators_.push_back(std::make_shared<TopKCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<TopKCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_TRANSPOSE:
-            op_creators_.push_back(std::make_shared<TransposeCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<TransposeCreator>(opInputs, opOutputs, tensors_, scalars_);
             break;
         case ANEURALNETWORKS_TRANSPOSE_CONV_2D:
-            op_creators_.push_back(std::make_shared<TransposeConv2DCreator>(
-                    std::vector<uint32_t>(inputs, inputs + inputCount),
-                    std::vector<uint32_t>(outputs, outputs + outputCount), tensors_, scalars_));
+            opCreator = std::make_shared<TransposeConv2DCreator>(opInputs, opOutputs, tensors_,
+                                                                 scalars_);
             break;
         default:
-            op_creators_.push_back(std::make_shared<OpPlaceHolderCreator>(type));
+            opCreator = std::make_shared<PlaceHolderOpCreator>(type);
             break;
     }
-    auto op = op_creators_.back();
-    op_supports_.push_back(op->support_state_);
+
+    opCreators_.push_back(opCreator);
+    opSupported_.push_back(opCreator->isSupported());
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::IdentifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs,
+int Model::relaxComputationFloat32toFloat16(bool relaxed) {
+    if (finished_) {
+        LOGE("Model::relaxComputationFloat32toFloat16 cannot modify a finished model");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+    relaxed_ = relaxed;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Model::finish() {
+    if (finished_) {
+        LOGE("Model::finish the model is already finished");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+    finished_ = true;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Model::identifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs,
                                     uint32_t outputCount, const uint32_t* outputs) {
     if (finished_) {
-        std::cout << "Error: can not modify a finished model." << std::endl;
+        LOGE("Model::identifyInputsAndOutputs cannot modify a finished model");
         return ANEURALNETWORKS_BAD_STATE;
     }
     inputs_ = std::vector<uint32_t>(inputs, inputs + inputCount);
     outputs_ = std::vector<uint32_t>(outputs, outputs + outputCount);
-    // for (uint32_t in : inputs_) {
-    //     auto in_shape = tensors_[in].shape;
-    //     bool no_zero = std::all_of(in_shape.begin(), in_shape.end(), [](int s) { return s != 0; });
-    //     if (!no_zero) {
-    //         std::cout << "Error: Can not support zero shape in input tensor" << std::endl;
-    //         return ANEURALNETWORKS_BAD_DATA;
-    //     }
-    // }
-    // for (uint32_t out : outputs_) {
-    //     auto out_shape = tensors_[out].shape;
-    //     bool no_zero =
-    //             std::all_of(out_shape.begin(), out_shape.end(), [](int s) { return s != 0; });
-    //     if (!no_zero) {
-    //         std::cout << "Error: Can not support zero shape in output tensor" << std::endl;
-    //         return ANEURALNETWORKS_BAD_DATA;
-    //     }
-    // }
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Model::GetSupportedOperations(bool* supported_ops) const {
-    std::cout << "SL graph has "<< op_creators_.size() << " ops totally"<< std::endl;
-    for (int i = 0; i < op_creators_.size(); ++i) {
-        supported_ops[i] = op_creators_[i]->Check() && op_supports_[i];
-        std::cout << "op " << op_creators_[i]->Type() << " support status: " << supported_ops[i]
-                  << std::endl;
+int Model::getSupportedOperations(bool* supportedOps) const {
+    if (!finished_) {
+        LOGE("Model::getSupportedOperations the model is unfinished");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    LOGV("Model::getSupportedOperations SL graph total ops count: %zu", opCreators_.size());
+    for (size_t i = 0; i < opCreators_.size(); i++) {
+        supportedOps[i] = opCreators_[i]->checkSupported() && opSupported_[i];
+        LOGV("Model::getSupportedOperations op index: %zu, type: %d, supported: %d", i,
+             opCreators_[i]->getType(), supportedOps[i]);
     }
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl

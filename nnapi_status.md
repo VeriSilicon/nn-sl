@@ -75,38 +75,5 @@
 | ANeuralNetworks_getDeviceCount                                            | Yes    | 5             |
 | ANeuralNetworks_getMaximumLoopTimeout                                     | Yes    | 5             |
 | ANeuralNetworks_getRuntimeFeatureLevel                                    | Yes    | 5             |
-| - | - | - | - |
-| SL_ANeuralNetworksCompilation_setCachingFromFds                           | Yes    | 5             |
-| SL_ANeuralNetworksDevice_getNumberOfCacheFilesNeeded                      | Yes    | 5             |
-| SL_ANeuralNetworksDevice_getPerformanceInfo                               | Yes    | 5             |
-| SL_ANeuralNetworksDevice_forEachOperandPerformanceInfo                    | Yes    | 5             |
-| SL_ANeuralNetworksDevice_getVendorExtensionCount                          | won't suppoprt | 5     |
-| SL_ANeuralNetworksDevice_getVendorExtensionName                           | won't suppoprt | 5     |
-| SL_ANeuralNetworksDevice_forEachVendorExtensionOperandTypeInformation     | won't suppoprt | 5     |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getSessionId                  | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getNnApiVersion               | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getModelArchHash              | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getDeviceIds                  | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getErrorCode                  | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getInputDataClass             | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getOutputDataClass            | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_getCompilationTimeNanos       | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_isCachingEnabled              | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_isControlFlowUsed             | No     | 5             |
-| SL_ANeuralNetworksDiagnosticCompilationInfo_areDynamicTensorsUsed         | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getSessionId                    | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getNnApiVersion                 | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getModelArchHash                | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getDeviceIds                    | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getExecutionMode                | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getInputDataClass               | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getOutputDataClass              | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getErrorCode                    | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getRuntimeExecutionTimeNanos    | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_getHardwareExecutionTimeNanos   | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_isCachingEnabled                | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_isControlFlowUsed               | No     | 5             |
-| SL_ANeuralNetworksDiagnosticExecutionInfo_areDynamicTensorsUsed           | No     | 5             |
-| SL_ANeuralNetworksDiagnostic_registerCallbacks                            | No     | 5             |
 
 **NOTE**: test result with imx8mp android 14

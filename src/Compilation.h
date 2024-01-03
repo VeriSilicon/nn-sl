@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,56 +21,94 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_COMPILATION_H
 #define VSI_ANDROID_SL_COMPILATION_H
+
+#include <array>
+#include <filesystem>
 #include <memory>
-#include <unordered_map>
+#include <vector>
 
+#include "Device.h"
 #include "Model.h"
-#include "VsiDevice.h"
-#include "slang/type_system.h"
-#include "tim/vx/ops.h"
+#include "Types.h"
+#include "tim/vx/context.h"
+#include "tim/vx/graph.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
+
+namespace fs = std::filesystem;
 
 class Compilation {
    public:
-    Compilation(Model* model) : model_(model) {}
-    Compilation(Model* model, const std::vector<const VsiDevice*> devices)
-        : model_(model), devices_(devices) {}
-    int Finish() {
-        finished_ = true;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    Model* GetModel() { return model_; }
-    Model* GetModel() const { return model_; }
-    const std::vector<const VsiDevice*>& Devices() { return devices_; }
-    int SetPreference(PreferenceCode preference) {
-        preference_ = preference;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int SetPriority(PriorityCode priority) {
-        priority_ = priority;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int SetTimeout(DurationCode duration) {
-        duration_ = duration;
-        return ANEURALNETWORKS_NO_ERROR;
+    enum class CacheState {
+        DISABLED,
+        EMPTY,
+        LOADED,
+    };
+
+    static constexpr uint32_t kNumModelCacheFiles = 1;
+    static constexpr uint32_t kNumDataCacheFiles = 0;
+
+    explicit Compilation(Model* model)
+        : model_(model),
+          cacheState_(CacheState::DISABLED),
+          vxContext_(tim::vx::Context::Create()) {}
+    explicit Compilation(Model* model, const std::vector<std::shared_ptr<Device>>& devices)
+        : model_(model),
+          devices_(devices),
+          cacheState_(CacheState::DISABLED),
+          vxContext_(tim::vx::Context::Create()) {}
+
+    ~Compilation();
+    int finish();
+    [[nodiscard]] bool isFinished() const { return finished_; }
+
+    [[nodiscard]] Model* getModel() { return model_; }
+    [[nodiscard]] const Model* getModel() const { return model_; }
+    [[nodiscard]] const std::vector<std::shared_ptr<Device>>& getDevices() const {
+        return devices_;
     }
 
+    [[nodiscard]] CacheState getCacheState() const { return cacheState_; }
+    [[nodiscard]] const uint8_t* getCacheData() const {
+        return cacheBuffer_.empty() ? nullptr : cacheBuffer_.data();
+    }
+    [[nodiscard]] size_t getCacheSize() const { return cacheBuffer_.size(); }
+    int writeToCache(const uint8_t* data, size_t size);
+
+    int setPreference(PreferenceCode preference);
+    int setPriority(PriorityCode priority);
+    int setTimeout(Duration duration);
+    int setCaching(int fd, const uint8_t* token);
+    int setCaching(const fs::path& cacheDir, const uint8_t* token);
+
+    void setCompiledGraph(const std::shared_ptr<tim::vx::Graph>& compiledGraph) {
+        vxGraph_ = compiledGraph;
+    }
+    [[nodiscard]] std::shared_ptr<tim::vx::Context> getContext() { return vxContext_; }
+    [[nodiscard]] std::shared_ptr<tim::vx::Graph> getCompiledGraph() { return vxGraph_; }
+
    private:
+    static constexpr std::array<char, 4> kNBGMagic = {'V', 'P', 'M', 'N'};
+
     Model* model_;
     PreferenceCode preference_;
     PriorityCode priority_;
-    DurationCode duration_;
-    const std::vector<const VsiDevice*> devices_;
-    bool finished_{false};
+    Duration timeoutDuration_;
+    std::vector<std::shared_ptr<Device>> devices_;
+    std::shared_ptr<tim::vx::Context> vxContext_;
+    std::shared_ptr<tim::vx::Graph> vxGraph_;
+
+    CacheState cacheState_;
+    std::vector<uint8_t> cacheBuffer_;
+    std::array<uint8_t, ANEURALNETWORKS_BYTE_SIZE_OF_CACHE_TOKEN> cacheToken_;
+    int cacheFd_ = -1;
+
+    bool finished_ = false;
 };
 
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl
 
 #endif
