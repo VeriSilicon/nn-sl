@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,32 +21,56 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_EVENT_H
 #define VSI_ANDROID_SL_EVENT_H
 
-#include "NeuralNetworksTypes.h"
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "Types.h"
-#include "Execution.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
-class Event {
+namespace vsi::android::sl {
+
+class IEvent {
    public:
-    Event() {}
-    Event(int sync_fence) : sync_fence_(sync_fence) {}
-    Event(Execution exec, Event eve) : execution_(exec) {}
-
-   private:
-    int sync_fence_{0};
-    Execution execution_{nullptr};
-    Event depend_{nullptr};
-    bool finished_{false};
-    void* data_{nullptr};
-    size_t length_{0};
+    virtual ~IEvent() = default;
+    virtual int wait() const = 0;  // NOLINT(modernize-use-nodiscard)
+    [[nodiscard]] virtual int getSyncFenceFd(bool shouldDup) const = 0;
 };
 
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+class CallbackEvent : public IEvent {
+   public:
+    explicit CallbackEvent(TimePoint deadline);
+
+    [[nodiscard]] int getSyncFenceFd(bool /*shouldDup*/) const override { return -1; }
+
+    int bindThread(std::thread thread);
+    int wait() const override;
+    void notify();
+
+   private:
+    mutable std::thread thread_;
+    mutable std::mutex mutex_;
+    mutable std::condition_variable cv_;
+    bool isNotified_;
+    TimePoint deadline_;
+};
+
+class SyncFenceEvent : public IEvent {
+   public:
+    explicit SyncFenceEvent(int syncFenceFd);
+    ~SyncFenceEvent() override;
+
+    [[nodiscard]] int getSyncFenceFd(bool shouldDup) const override;
+
+    int wait() const override;
+
+   private:
+    int syncFenceFd_ = -1;
+    mutable std::mutex mutex_;
+};
+
+}  // namespace vsi::android::sl
 #endif

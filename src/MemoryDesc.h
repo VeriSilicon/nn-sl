@@ -22,47 +22,41 @@
  *
  *****************************************************************************/
 
-#ifndef VSI_ANDROID_SL_UTILS_H_
-#define VSI_ANDROID_SL_UTILS_H_
+#ifndef VSI_ANDROID_SL_MEMORY_DESC_H
+#define VSI_ANDROID_SL_MEMORY_DESC_H
 
 #include <android/NeuralNetworksTypes.h>
-#include <android/log.h>
+
+#include <optional>
+#include <set>
+#include <tuple>
 
 #include "Types.h"
 #include "slang/type_system.h"
-#include "tim/vx/types.h"
 
 namespace vsi::android::sl {
 
-#define LOG_TAG "NNAPI-VSI-SL"
+class Compilation;
+using CompilationRole = std::tuple<const Compilation*, IOType, uint32_t>;
 
-#if NDEBUG
-#define LOGV(...) static_assert(true, "NOOP")
-#else
-#define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
-#endif
+class MemoryDesc {
+   public:
+    int addRole(const Compilation* compilation, IOType ioType, uint32_t index, float frequency);
+    int setShape(const std::vector<uint32_t>& dimensions);
+    int finish();
 
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define LOGF(...) __android_log_print(ANDROID_LOG_FATAL, LOG_TAG, __VA_ARGS__)
+    [[nodiscard]] bool finished() const { return finished_; }
+    [[nodiscard]] size_t getSize() const;
+    [[nodiscard]] std::set<CompilationRole> getRoles() const { return roles_; }
+    [[nodiscard]] slang::type::tensor_storage getOperand() const { return *tensorOperand_; }
+    [[nodiscard]] std::vector<uint32_t> getShape() const { return shape_; }
 
-constexpr size_t alignSize(size_t size, size_t alignment) {
-    return (size + (alignment - 1)) & ~(alignment - 1);
-}
-
-size_t getDtypeSize(slang::type::data_type type);
-
-tim::vx::DataType ToTvxDataType(slang::type::data_type type);
-
-tim::vx::QuantType ToTvxQuantType(slang::type::quant_type type);
-
-slang::type::data_type MapDataType(int32_t type);
-
-slang::type::quant_type MapQuantType(int32_t type);
-
-Shape combineShape(const Shape& lhs, const Shape& rhs);
+   private:
+    std::set<CompilationRole> roles_;
+    std::optional<slang::type::tensor_storage> tensorOperand_;
+    std::vector<uint32_t> shape_;
+    bool finished_ = false;
+};
 
 }  // namespace vsi::android::sl
 

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,58 +21,33 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_DEVICE_MANAGER_H
 #define VSI_ANDROID_SL_DEVICE_MANAGER_H
-#include <sys/system_properties.h>
 
 #include <memory>
-#include <cstdlib>
 
-#include "VsiDevice.h"
-#include "tim/vx/platform/native.h"
-#ifdef USE_GRPC
-#include "tim/vx/platform/grpc/grpc_remote.h"
-#endif
-namespace vsi {
-namespace android {
-namespace sl {
+#include "Device.h"
+#include "tim/vx/platform/platform.h"
+
+namespace vsi::android::sl {
+
 class DeviceManager {
    public:
-    static DeviceManager* Instance() {
-        if (instance_ == nullptr) {
-            instance_ = new DeviceManager();
-#ifdef USE_GRPC
-            char env[32] = {0};
-            __system_property_get("vendor.VSI_ASL_PORT", env);
-            std::string port(env);
-            auto devices = tim::vx::platform::GRPCRemoteDevice::Enumerate(port);
-
-#else
-            auto devices = tim::vx::platform::NativeDevice::Enumerate();
-#endif
-            for (int i = 0; i < devices.size(); ++i) {
-                std::string name("vsi-device-" + std::to_string(i));
-                std::shared_ptr<VsiDevice> device = std::make_shared<VsiDevice>(devices[i], name);
-                instance_->GetDevices().push_back(device);
-            }
-        }
-        return instance_;
+    static DeviceManager* get() {
+        static DeviceManager manager;
+        return &manager;
     }
-    std::vector<std::shared_ptr<VsiDevice>>& GetDevices() { return devices_; }
+
+    [[nodiscard]] size_t getNumDevices() { return devices_.size(); }
+    [[nodiscard]] const std::vector<std::shared_ptr<Device>>& getDevices() { return devices_; }
 
    private:
-    DeviceManager(){};
-    DeviceManager(const DeviceManager&){};
-    DeviceManager& operator=(const DeviceManager&) = delete;
+    DeviceManager();  // NOLINT(modernize-use-equals-delete)
 
-    static DeviceManager* instance_;
-    std::vector<std::shared_ptr<VsiDevice>> devices_;
+    std::vector<std::shared_ptr<Device>> devices_;
 };
 
-DeviceManager* DeviceManager::instance_ = nullptr;
-
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl
 
 #endif

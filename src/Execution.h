@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,91 +21,105 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_EXECUTION_H
 #define VSI_ANDROID_SL_EXECUTION_H
-#include <map>
+
+#include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include "Compilation.h"
+#include "Event.h"
 #include "Memory.h"
+#include "Types.h"
 #include "tim/vx/context.h"
 #include "tim/vx/graph.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
 
 class Execution {
    public:
-    Execution() {}
-    Execution(Compilation* compilation) : compilation_(compilation) {
-        auto model = compilation_->GetModel();
-        inputs_memory_.resize(model->Inputs().size());
-        outputs_memory_.resize(model->Outputs().size());
-        inputs_dimension_.resize(model->Inputs().size());
-        outputs_dimension_.resize(model->Outputs().size());
-        vx_context_ = tim::vx::Context::Create();
-        reusable_ = false;
-    }
-    int SetInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
+    explicit Execution(Compilation* compilation);
+
+    [[nodiscard]] const Compilation* getCompilation() const { return compilation_; }
+
+    int setReusable(bool reusable);
+    int setTimeout(Duration duration);
+    int setLoopTimeout(Duration duration);
+    int setMeasureTiming(bool measure);
+
+    int setInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
                  size_t length);
-    int SetOutput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
-                 size_t length);
-    int SetInputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
-                           const Memory* memory, size_t offset, size_t length);
-    int SetOutputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
-                            const Memory* memory, size_t offset, size_t length);
-    int Compute();
-    int GetOutputOperandRank(int32_t index, uint32_t* rank);
-    int GetOutputOperandDimensions(int32_t index, uint32_t* dimensions);
-    int SetReusable(bool reusable) {
-        reusable_ = reusable;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int SetLoopTimeout(uint64_t duration) {
-        duration_ = duration;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
+    int setOutput(int32_t index, const ANeuralNetworksOperandType* type, void* buffer,
+                  size_t length);
+    int setInputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
+                           const IMemory* memory, size_t offset, size_t length);
+    int setOutputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
+                            const IMemory* memory, size_t offset, size_t length);
+
+    int compute();
+
+    CallbackEvent* createSyncEvent();
+    int startCompute();
+
+    int getDuration(DurationCode durationCode, uint64_t* duration) const;
+    int getOutputOperandRank(int32_t index, uint32_t* rank) const;
+    int getOutputOperandDimensions(int32_t index, uint32_t* dimensions) const;
+
    private:
-    std::shared_ptr<tim::vx::Tensor> CreateTvxIOTensor(const slang::type::tensor_storage& tensor,
-                                                       tim::vx::TensorAttribute attr);
-    int MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_creators,
-                      const TensorMap& tensor_map, const ScalarMap& scalar_map);
-    struct IOMemory {
-        IOMemory() {}
-        IOMemory(const Memory* memory, size_t offset, size_t length)
-            : memory(memory), offset(offset), length(length) {}
-        const Memory* memory;
-        size_t offset;
-        size_t length;
+    // See execution state definitions in
+    // https://developer.android.com/ndk/reference/group/neural-networks#aneuralnetworksexecution
+    enum class State {
+        PREPARATION,
+        COMPUTATION,
+        COMPLETED,
     };
 
-    std::vector<IOMemory> inputs_memory_;
-    std::vector<IOMemory> outputs_memory_;
-    std::vector<std::vector<uint32_t>> inputs_dimension_;
-    std::vector<std::vector<uint32_t>> outputs_dimension_;
-    Compilation* compilation_;
-    std::shared_ptr<tim::vx::Context> vx_context_;
-    std::shared_ptr<tim::vx::Graph> vx_graph_;
-    std::unordered_map<uint32_t, std::shared_ptr<tim::vx::Tensor>> vx_tensors_;
-    std::pair<std::shared_ptr<tim::vx::Graph>,
-              std::map<std::shared_ptr<tim::vx::Tensor>, std::shared_ptr<tim::vx::Tensor>>>
-            layout_infered_;
-    bool reusable_;
-    uint64_t duration_;
-    // src_graph output order may be different from infer_graph
-    std::vector<uint32_t> output_order_;
-    std::vector<uint32_t> out_memory_order_;
+    struct IOBufferInfo {
+        size_t offset;
+        size_t length;
+        void* buffer;
+        const IMemory* memory;
+    };
 
-#ifdef RUN_NBG
-    std::shared_ptr<tim::vx::platform::IExecutor> executor_;
-    std::shared_ptr<tim::vx::platform::IExecutable> executable_;
-    std::vector<std::shared_ptr<tim::vx::platform::ITensorHandle>> input_handles_;
-    std::vector<std::shared_ptr<tim::vx::platform::ITensorHandle>> output_handles_;
-#endif
+    using VxContext = std::shared_ptr<tim::vx::Context>;
+    using VxGraph = std::shared_ptr<tim::vx::Graph>;
+    using VxTensor = std::shared_ptr<tim::vx::Tensor>;
+    using VxOp = std::shared_ptr<tim::vx::Operation>;
+    using VxTensorMap = std::unordered_map<uint32_t, VxTensor>;
+
+    VxTensor createVxConstantTensor(const slang::type::tensor_storage& tensor,
+                                    Model::OperandValueInfo valueInfo);
+    VxTensor createVxIOTensor(const slang::type::tensor_storage& tensor,
+                              tim::vx::TensorAttribute attr);
+    int mapOperations(const std::vector<std::shared_ptr<OpCreator>>& opCreators,
+                      const TensorMap& tensorMap, const ScalarMap& scalarMap);
+    int compile();
+
+    // Indexed by execution I/O index, not model tensor index.
+    std::vector<IOBufferInfo> inputBufferInfos_;
+    std::vector<IOBufferInfo> outputBufferInfos_;
+    std::vector<VxTensor> inputVxTensors_;
+    std::vector<VxTensor> outputVxTensors_;
+
+    Compilation* compilation_;
+    // Compile time graph.
+    VxGraph vxGraph_;
+    // Runtime graph.
+    VxGraph runtimeGraph_;
+    // Indexed by model tensor index.
+    VxTensorMap vxTensors_;
+
+    CallbackEvent* syncEvent_;
+    Duration timeoutDuration_;
+    Duration loopTimeoutDuration_;
+
+    bool reusable_;
+    bool measure_;
+    State state_;
 };
 
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl
 
 #endif

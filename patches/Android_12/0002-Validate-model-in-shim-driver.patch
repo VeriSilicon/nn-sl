@@ -1,0 +1,60 @@
+From af587b3554695cb875c560399bc504816b80d086 Mon Sep 17 00:00:00 2001
+From: Xiaoran Weng <Xiaoran.Weng@verisilicon.com>
+Date: Tue, 2 Jan 2024 09:52:40 +0800
+Subject: [PATCH 2/2] Validate model in shim driver
+
+---
+ shim_and_sl/ShimDevice.cpp | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/shim_and_sl/ShimDevice.cpp b/shim_and_sl/ShimDevice.cpp
+index eadbbef..cdadea1 100644
+--- a/shim_and_sl/ShimDevice.cpp
++++ b/shim_and_sl/ShimDevice.cpp
+@@ -475,6 +475,12 @@ ndk::ScopedAStatus ShimDevice::getSupportedExtensions(std::vector<Extension>* ex
+ 
+ ndk::ScopedAStatus ShimDevice::getSupportedOperations(const Model& model,
+                                                       std::vector<bool>* supportedOperations) {
++    const auto canonicalModel = ::android::nn::convert(model);
++    if (!canonicalModel.has_value()) {
++        LOG(ERROR) << "HAL model is invalid: " << canonicalModel.error().message;
++        return toAStatus(ErrorStatus::INVALID_ARGUMENT, canonicalModel.error().message);
++    }
++
+     const auto numOperations = model.main.operations.size();
+     supportedOperations->resize(numOperations);
+ 
+@@ -546,6 +552,13 @@ ndk::ScopedAStatus ShimDevice::prepareModel(
+         return toAStatus(ErrorStatus::INVALID_ARGUMENT);
+     }
+ 
++    const auto canonicalModel = ::android::nn::convert(model);
++    if (!canonicalModel.has_value()) {
++        LOG(ERROR) << "HAL model is invalid: " << canonicalModel.error().message;
++        callback->notify(ErrorStatus::INVALID_ARGUMENT, nullptr);
++        return toAStatus(ErrorStatus::INVALID_ARGUMENT, canonicalModel.error().message);
++    }
++
+     ErrorStatus convertErrorStatus = ErrorStatus::NONE;
+     std::vector<uint8_t> copiedOperandValues;
+     auto modelAndMemory =
+@@ -556,6 +569,16 @@ ndk::ScopedAStatus ShimDevice::prepareModel(
+         return toAStatus(convertErrorStatus);
+     }
+ 
++    std::vector<bool> supportedOps;
++    getSupportedOperations(model, &supportedOps);
++    bool allOpsSupported = std::all_of(supportedOps.cbegin(), supportedOps.cend(),
++                                       [](bool supported) { return supported; });
++
++    if (!allOpsSupported) {
++        callback->notify(ErrorStatus::INVALID_ARGUMENT, nullptr);
++        return ndk::ScopedAStatus::ok();
++    }
++
+     // b/185976051, past this point we pretend that compilation is asynchronous, and in
+     /// case of error we return OK status, but communicate the error through the callback.
+     auto compilation = ::android::nn::sl_wrapper::Compilation::createForDevice(
+-- 
+2.34.1
+

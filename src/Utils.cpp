@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,12 +21,34 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #include "Utils.h"
 
-#include <iostream>
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
+
+size_t getDtypeSize(slang::type::data_type type) {
+    // NOLINTBEGIN(*-magic-numbers)
+    switch (type) {
+        case slang::type::data_type::kINT8:
+        case slang::type::data_type::kUINT8:
+        case slang::type::data_type::kBOOL8:
+            return 1;
+        case slang::type::data_type::kINT16:
+        case slang::type::data_type::kUINT16:
+        case slang::type::data_type::kFP16:
+        case slang::type::data_type::kBF16:
+            return 2;
+        case slang::type::data_type::kINT32:
+        case slang::type::data_type::kUINT32:
+        case slang::type::data_type::kFP32:
+            return 4;
+        case slang::type::data_type::kINT64:
+            return 8;
+        default:
+            return 0;
+    }
+    // NOLINTEND(*-magic-numbers)
+}
 
 tim::vx::DataType ToTvxDataType(slang::type::data_type type) {
     switch (type) {
@@ -49,9 +71,9 @@ tim::vx::DataType ToTvxDataType(slang::type::data_type type) {
         case slang::type::data_type::kBOOL8:
             return tim::vx::DataType::BOOL8;
         default:
-            std::cout << "Unknown data type in tim-vx." << std::endl;
+            LOGW("Unsupported slang dtype: %d", type);
+            return tim::vx::DataType::UNKNOWN;
     }
-    return tim::vx::DataType::UNKNOWN;
 }
 
 tim::vx::QuantType ToTvxQuantType(slang::type::quant_type type) {
@@ -66,7 +88,6 @@ tim::vx::QuantType ToTvxQuantType(slang::type::quant_type type) {
         default:
             return tim::vx::QuantType::NONE;
     }
-    return tim::vx::QuantType::NONE;
 }
 
 slang::type::data_type MapDataType(int32_t type) {
@@ -95,10 +116,12 @@ slang::type::data_type MapDataType(int32_t type) {
         case ANEURALNETWORKS_TENSOR_FLOAT16:
         case ANEURALNETWORKS_FLOAT16:
             return slang::type::data_type::kFP16;
+        case ANEURALNETWORKS_MODEL:
+            return slang::type::data_type::kMODELVALUE;
         default:
-            std::cout << "Unknown data type from nnapi." << std::endl;
+            LOGW("Unsupported NNAPI dtype: %d", type);
+            return slang::type::data_type::kINVALID;
     }
-    return slang::type::data_type::kINVALID;
 }
 
 slang::type::quant_type MapQuantType(int32_t type) {
@@ -118,250 +141,32 @@ slang::type::quant_type MapQuantType(int32_t type) {
     return slang::type::quant_type::kINVALID;
 }
 
-void PrintVXSpec(const tim::vx::TensorSpec& spec) {
-    std::cout << "-------------------------------------------" << std::endl;
-    std::cout << "Timvx tensor datatype: ";
-    switch ((int32_t)spec.datatype_) {
-        case 1:
-            std::cout << "INT8" << std::endl;
-            break;
-        case 2:
-            std::cout << "UINT8" << std::endl;
-            break;
-        case 3:
-            std::cout << "INT16" << std::endl;
-            break;
-        case 4:
-            std::cout << "UINT16" << std::endl;
-            break;
-        case 5:
-            std::cout << "INT32" << std::endl;
-            break;
-        case 6:
-            std::cout << "UINT32" << std::endl;
-            break;
-        case 7:
-            std::cout << "INT64" << std::endl;
-            break;
-        case 8:
-            std::cout << "FLOAT16" << std::endl;
-            break;
-        case 9:
-            std::cout << "FLOAT32" << std::endl;
-            break;
-        case 10:
-            std::cout << "BOOL8" << std::endl;
-            break;
-        default:
-            std::cout << "Not support INT64 and other type";
-            break;
+Shape combineShape(const Shape& lhs, const Shape& rhs) {
+    if (rhs.empty()) {
+        return lhs;
     }
-    std::cout << "Shape: ";
-    for (auto it = spec.shape_.begin(); it != spec.shape_.end(); it++) {
-        std::cout << *it << ",";
+
+    if (lhs.empty()) {
+        return rhs;
     }
-    std::cout << std::endl;
-    std::cout << "Attr: ";
-    switch ((int32_t)spec.attr_) {
-        case 1:
-            std::cout << "CONSTANT" << std::endl;
-            break;
-        case 2:
-            std::cout << "TRANSIENT" << std::endl;
-            break;
-        case 4:
-            std::cout << "VARIABLE" << std::endl;
-            break;
-        case 8:
-            std::cout << "INPUT" << std::endl;
-            break;
-        case 16:
-            std::cout << "OUTPUT" << std::endl;
-            break;
-        default:
-            std::cout << "Not support attr" << std::endl;
-            break;
+
+    if (lhs.size() != rhs.size()) {
+        LOGE("%s incompatible ranks: lhs (%zu) vs. rhs (%zu)", __func__, lhs.size(), rhs.size());
+        return {};
     }
-    std::cout << "QuantType: ";
-    switch ((int32_t)spec.quantization_.Type()) {
-        case 0:
-            std::cout << "NONE" << std::endl;
-            break;
-        case 1:
-            std::cout << "ASYMMETRIC" << std::endl;
-            break;
-        case 2:
-            std::cout << "SYMMETRIC_PER_CHANNEL" << std::endl;
-            break;
-        case 3:
-            std::cout << "DYNAMIC_FIXED_POINT" << std::endl;
-            break;
-        case 16:
-            std::cout << "OUTPUT" << std::endl;
-            break;
-        default:
-            std::cout << "Not support quantization type" << std::endl;
-            break;
+
+    Shape combined = lhs;
+    for (size_t i = 0; i < lhs.size(); i++) {
+        if (lhs[i] == 0) {
+            combined[i] = rhs[i];
+        } else if (rhs[i] != 0 && lhs[i] != rhs[i]) {
+            LOGE("%s incompatible dim length at axis %zu: lhs (%u) vs. rhs (%u)", __func__, i,
+                 lhs[i], rhs[i]);
+            return {};
+        }
     }
-    if ((int32_t)spec.quantization_.Type() != 0) {
-        std::cout << "Channel_dim: " << spec.quantization_.ChannelDim() << std::endl;
-        std::cout << "Scales: ";
-        PrintVector(spec.quantization_.Scales());
-        std::cout << "Zero_points: ";
-        PrintVector(spec.quantization_.ZeroPoints());
-        std::cout << "Fl: " << spec.quantization_.Fl() << std::endl;
-    }
+
+    return combined;
 }
 
-void PrintTensorStorage(slang::type::tensor_storage s) {
-    std::cout << "-------------------------------------------" << std::endl;
-    std::cout << "Tensor storage datatype: ";
-    switch ((int32_t)s.dtype) {
-        case 0:
-            std::cout << "kTF32" << std::endl;
-            break;
-        case 1:
-            std::cout << "kFP32" << std::endl;
-            break;
-        case 2:
-            std::cout << "kFP16" << std::endl;
-            break;
-        case 3:
-            std::cout << "kBF16" << std::endl;
-            break;
-        case 4:
-            std::cout << "kINT64" << std::endl;
-            break;
-        case 5:
-            std::cout << "kINT32" << std::endl;
-            break;
-        case 6:
-            std::cout << "kUINT32" << std::endl;
-            break;
-        case 7:
-            std::cout << "kINT16" << std::endl;
-            break;
-        case 8:
-            std::cout << "kUINT16" << std::endl;
-            break;
-        case 9:
-            std::cout << "kINT8" << std::endl;
-            break;
-        case 10:
-            std::cout << "kUINT8" << std::endl;
-            break;
-        case 11:
-            std::cout << "kBOOL8" << std::endl;
-            break;
-        default:
-            std::cout << "Not support tensor storage type" << std::endl;
-            break;
-    }
-    std::cout << "data_length: " << s.data_length << std::endl;
-    std::cout << "shape: ";  // original layout nhwc/nchw(not reverse)
-    for (auto it = s.shape.begin(); it != s.shape.end(); it++) {
-        std::cout << *it << ",";
-    }
-    std::cout << std::endl;
-    std::cout << "attr: ";
-    switch ((int32_t)s.attr) {
-        case 0:
-            std::cout << "kVARIABLE" << std::endl;
-            break;
-        case 1:
-            std::cout << "kCONSTANT" << std::endl;
-            break;
-        default:
-            std::cout << "Not support tensor torage attr" << std::endl;
-            break;
-    }
-    std::cout << "quant_type: ";
-    switch ((int32_t)s.qtype) {
-        case 0:
-            std::cout << "kNONE" << std::endl;
-            break;
-        case 1:
-            std::cout << "kASYMM" << std::endl;
-            break;
-        case 2:
-            std::cout << "kSYMM" << std::endl;
-            break;
-        case 3:
-            std::cout << "kSYMM_PCQ" << std::endl;
-            break;
-        case 4:
-            std::cout << "kDFP" << std::endl;
-            break;
-        default:
-            std::cout << "Not support tensor torage qtype" << std::endl;
-            break;
-    }
-    std::cout << "scale: " << s.scale << std::endl;
-    std::cout << "zero_point: " << s.zero_point << std::endl;
-    if (s.qtype == slang::type::quant_type::kSYMM_PCQ) {
-        std::cout << "channel_dim: " << s.channel_dim << std::endl;
-        std::cout << "per_channel_scales: ";
-        PrintVector(s.per_channel_scales);
-        std::cout << "per_channel_zero_points: ";
-        PrintVector(s.per_channel_zero_points);
-    }
-}
-
-void PrintScalarStorage(slang::type::scalar_storage s) {
-    std::cout << "-------------------------------------------" << std::endl;
-    std::cout << "data_length: " << s.data.size() << std::endl;
-    std::cout << "Scalar storage datatype: ";
-    switch ((int32_t)s.dtype) {
-        case 0:
-            std::cout << "kTF32" << std::endl;
-            break;
-        case 1:
-            std::cout << "kFP32" << std::endl;
-            PrintScalarStorageData<float>(s);
-            break;
-        case 2:
-            std::cout << "kFP16" << std::endl;
-            break;
-        case 3:
-            std::cout << "kBF16" << std::endl;
-            break;
-        case 4:
-            std::cout << "kINT64" << std::endl;
-            PrintScalarStorageData<int64_t>(s);
-            break;
-        case 5:
-            std::cout << "kINT32" << std::endl;
-            PrintScalarStorageData<int32_t>(s);
-            break;
-        case 6:
-            std::cout << "kUINT32" << std::endl;
-            PrintScalarStorageData<uint32_t>(s);
-            break;
-        case 7:
-            std::cout << "kINT16" << std::endl;
-            PrintScalarStorageData<int16_t>(s);
-            break;
-        case 8:
-            std::cout << "kUINT16" << std::endl;
-            PrintScalarStorageData<uint16_t>(s);
-            break;
-        case 9:
-            std::cout << "kINT8" << std::endl;
-            PrintScalarStorageData<int8_t>(s);
-            break;
-        case 10:
-            std::cout << "kUINT8" << std::endl;
-            PrintScalarStorageData<uint8_t>(s);
-            break;
-        case 11:
-            std::cout << "kBOOL8" << std::endl;
-            PrintScalarStorageData<bool>(s);
-            break;
-        default:
-            std::cout << "Not support scalar storage type" << std::endl;
-            break;
-    }
-}
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl

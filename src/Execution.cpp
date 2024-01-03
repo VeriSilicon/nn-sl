@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,99 +21,543 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #include "Execution.h"
 
 #include <algorithm>
+#include <limits>
+#include <thread>
 
 #include "MapOperation.h"
 #include "Memory.h"
 #include "Utils.h"
 #include "tim/transform/layout_inference.h"
-#include "tim/vx/ops.h"
-#include "tim/vx/platform/native.h"
 #include "tim/vx/platform/platform.h"
-#ifdef USE_GRPC
-#include "tim/vx/platform/grpc/grpc_remote.h"
-#endif
 #include "tim/vx/tensor.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
 
-std::shared_ptr<tim::vx::Tensor> Execution::CreateTvxIOTensor(
-        const slang::type::tensor_storage& tensor, tim::vx::TensorAttribute attr) {
-    tim::vx::DataType data_type = ToTvxDataType(tensor.dtype);
+Execution::Execution(Compilation* compilation)
+    : compilation_(compilation), reusable_(false), measure_(false), state_(State::PREPARATION) {
+    if (auto graph = compilation->getCompiledGraph(); graph != nullptr) {
+        inputVxTensors_ = graph->InputsTensor();
+        outputVxTensors_ = graph->OutputsTensor();
+        runtimeGraph_ = std::move(graph);
+    }
+
+    timeoutDuration_ = Duration::min();
+    loopTimeoutDuration_ = Duration::min();
+}
+
+int Execution::setReusable(bool reusable) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setReusable the execution may only be modified in the preparation state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    reusable_ = reusable;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setTimeout(Duration duration) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setTimeout the execution may only be modified in the preparation state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    timeoutDuration_ = duration;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setLoopTimeout(Duration duration) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setLoopTimeout the execution may only be modified in the preparation "
+             "state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    loopTimeoutDuration_ = duration;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setMeasureTiming(bool measure) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setMeasureTiming the execution may only be modified in the preparation "
+             "state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    measure_ = measure;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
+                        size_t length) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setInput the execution may only be modified in the preparation state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    if (type != nullptr) {
+        auto* model = compilation_->getModel();
+        uint32_t input = model->getInputs()[index];
+        auto& tensorMap = model->getTensorMap();
+        auto& inputTensor = tensorMap[input];
+        if (inputTensor.dtype != MapDataType(type->type) ||
+            std::fabs(inputTensor.scale - type->scale) > std::numeric_limits<float>::epsilon() ||
+            inputTensor.zero_point != type->zeroPoint) {
+            LOGE("Execution::setInput get invalid ANeuralNetworksOperandType");
+            return ANEURALNETWORKS_BAD_DATA;
+        }
+
+        auto shape =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        inputTensor.shape = shape;
+    }
+
+    IOBufferInfo inputBufferInfo = {
+            .offset = 0,
+            .length = length,
+            .buffer = const_cast<void*>(buffer),
+    };
+    inputBufferInfos_.push_back(inputBufferInfo);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setOutput(int32_t index, const ANeuralNetworksOperandType* type, void* buffer,
+                         size_t length) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setOutput the execution may only be modified in the preparation state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    if (type != nullptr) {
+        auto* model = compilation_->getModel();
+        uint32_t output = model->getOutputs()[index];
+        auto& tensorMap = model->getTensorMap();
+        auto& outputTensor = tensorMap[output];
+        if (outputTensor.dtype != MapDataType(type->type) ||
+            std::fabs(outputTensor.scale - type->scale) > std::numeric_limits<float>::epsilon() ||
+            outputTensor.zero_point != type->zeroPoint) {
+            LOGE("Execution::setOutput get invalid ANeuralNetworksOperandType");
+            return ANEURALNETWORKS_BAD_DATA;
+        }
+
+        auto shape =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        outputTensor.shape = shape;
+    }
+
+    IOBufferInfo outputBufferInfo = {
+            .offset = 0,
+            .length = length,
+            .buffer = buffer,
+    };
+    outputBufferInfos_.push_back(outputBufferInfo);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setInputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
+                                  const IMemory* memory, size_t offset, size_t length) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setInputFromMemory the execution may only be modified in the preparation "
+             "state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    int status = memory->validate(compilation_, IOType::INPUT, index, type, offset, length);
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("Execution::setInputFromMemory failed to validate memory");
+        return status;
+    }
+
+    if (type != nullptr && type->dimensionCount != 0) {  // implies tensor
+        auto* model = compilation_->getModel();
+        uint32_t input = model->getInputs()[index];
+        auto& tensorMap = model->getTensorMap();
+        auto& inputTensor = tensorMap[input];
+
+        auto shape =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        inputTensor.shape = shape;
+    }
+
+    IOBufferInfo inputBufferInfo = {
+            .offset = offset,
+            .length = length,
+            .memory = memory,
+    };
+    inputBufferInfos_.push_back(inputBufferInfo);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::setOutputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
+                                   const IMemory* memory, size_t offset, size_t length) {
+    if (state_ != State::PREPARATION) {
+        LOGE("Execution::setInputFromMemory the execution may only be modified in the preparation "
+             "state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    int status = memory->validate(compilation_, IOType::OUTPUT, index, type, offset, length);
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("Execution::setInputFromMemory failed to validate memory");
+        return status;
+    }
+
+    if (type != nullptr) {
+        auto* model = compilation_->getModel();
+        uint32_t output = model->getOutputs()[index];
+        auto& tensorMap = model->getTensorMap();
+        auto& outputTensor = tensorMap[output];
+
+        auto shape =
+                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
+        outputTensor.shape = shape;
+    }
+
+    IOBufferInfo outputBufferInfo = {
+            .offset = offset,
+            .length = length,
+            .memory = memory,
+    };
+    outputBufferInfos_.push_back(outputBufferInfo);
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::compute() {
+    if (state_ == State::COMPLETED && !reusable_) {
+        LOGE("Execution::compute try to schedule multiple computations for an execution which is "
+             "not reusable");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+    state_ = State::COMPUTATION;
+
+    // This function will be called multiple times, need to judge whether it is the first call.
+    if (runtimeGraph_ == nullptr) {
+        int result = compile();
+        if (result != ANEURALNETWORKS_NO_ERROR) {
+            LOGE("Execution::compute failed to compile graph for the 1st time");
+
+            state_ = State::COMPLETED;
+            return result;
+        }
+    }
+
+    if (inputVxTensors_.size() != inputBufferInfos_.size()) {
+        LOGE("Execution::compute not all inputs have set buffer or memory");
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    if (outputVxTensors_.size() != outputBufferInfos_.size()) {
+        LOGE("Execution::compute not all outputs have set buffer or memory");
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    for (size_t i = 0; i < inputVxTensors_.size(); i++) {
+        auto inputVxTensor = inputVxTensors_[i];
+        auto inputBufferInfo = inputBufferInfos_[i];
+
+        if (const auto* memory = inputBufferInfo.memory; memory != nullptr) {
+            if (!memory->isInitialized()) {
+                LOGE("Execution::compute input memory is uninitialized");
+                return ANEURALNETWORKS_OP_FAILED;
+            }
+            auto mapping = memory->map();
+            void* data = reinterpret_cast<uint8_t*>(mapping.getData()) + inputBufferInfo.offset;
+            size_t length =
+                    (inputBufferInfo.length == 0) ? mapping.getSize() : inputBufferInfo.length;
+            if (!inputVxTensor->CopyDataToTensor(data, length)) {
+                LOGE("Execution::compute failed to copy input data from memory");
+
+                state_ = State::COMPLETED;
+                return ANEURALNETWORKS_BAD_STATE;
+            }
+        } else if (const void* buffer = inputBufferInfo.buffer; buffer != nullptr) {
+            if (!inputVxTensor->CopyDataToTensor(buffer, inputBufferInfo.length)) {
+                LOGE("Execution::compute failed to copy input data from user buffer");
+
+                state_ = State::COMPLETED;
+                return ANEURALNETWORKS_BAD_STATE;
+            }
+        } else {
+            LOGW("Execution::compute input:%zu has null buffer or memory", i);
+            continue;
+        }
+    }
+
+    if (!runtimeGraph_->Run()) {
+        LOGE("Execution::compute failed to run tim-vx graph");
+
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    for (size_t i = 0; i < outputVxTensors_.size(); i++) {
+        auto outputVxTensor = outputVxTensors_[i];
+        auto outputBufferInfo = outputBufferInfos_[i];
+
+        if (const auto* memory = outputBufferInfo.memory; memory != nullptr) {
+            auto mapping = memory->map();
+            void* data = reinterpret_cast<uint8_t*>(mapping.getData()) + outputBufferInfo.offset;
+            if (!outputVxTensor->CopyDataFromTensor(data)) {
+                LOGE("Execution::compute failed to copy output data to memory");
+
+                state_ = State::COMPLETED;
+                return ANEURALNETWORKS_BAD_STATE;
+            }
+
+            const_cast<IMemory*>(memory)->setInitialized(true);
+        } else if (void* buffer = outputBufferInfo.buffer; buffer != nullptr) {
+            if (!outputVxTensor->CopyDataFromTensor(buffer)) {
+                LOGE("Execution::compute failed to copy output data to user buffer");
+
+                state_ = State::COMPLETED;
+                return ANEURALNETWORKS_BAD_STATE;
+            }
+        } else {
+            LOGE("Execution::compute output:%zu has null buffer or memory", i);
+            state_ = State::COMPLETED;
+            return ANEURALNETWORKS_BAD_STATE;
+        }
+    }
+
+    state_ = State::COMPLETED;
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+CallbackEvent* Execution::createSyncEvent() {
+    auto deadline = timeoutDuration_ != Duration::min() ? Clock::now() + timeoutDuration_
+                                                        : TimePoint::max();
+    auto* event = new CallbackEvent(deadline);
+    syncEvent_ = event;
+    return event;
+}
+
+int Execution::startCompute() {
+    if (state_ == State::COMPLETED && !reusable_) {
+        LOGE("Execution::startCompute try to schedule multiple computations for an execution which "
+             "is "
+             "not reusable");
+
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+    state_ = State::COMPUTATION;
+
+    // This function will be called multiple times, need to judge whether it is the first call.
+    if (runtimeGraph_ == nullptr) {
+        int result = compile();
+        if (result != ANEURALNETWORKS_NO_ERROR) {
+            LOGE("Execution::startCompute failed to compile graph for the 1st time");
+
+            state_ = State::COMPLETED;
+            return result;
+        }
+    }
+
+    if (inputVxTensors_.size() != inputBufferInfos_.size()) {
+        LOGE("Execution::startCompute not all inputs have set buffer or memory");
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    if (outputVxTensors_.size() != outputBufferInfos_.size()) {
+        LOGE("Execution::startCompute not all outputs have set buffer or memory");
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    auto asyncThread = std::thread([this]() {
+        for (size_t i = 0; i < inputVxTensors_.size(); i++) {
+            auto inputVxTensor = inputVxTensors_[i];
+            auto inputBufferInfo = inputBufferInfos_[i];
+
+            if (const auto* memory = inputBufferInfo.memory; memory != nullptr) {
+                if (!memory->isInitialized()) {
+                    LOGE("Execution::startCompute input memory is uninitialized");
+                    return ANEURALNETWORKS_OP_FAILED;
+                }
+
+                auto mapping = memory->map();
+                void* data = reinterpret_cast<uint8_t*>(mapping.getData()) + inputBufferInfo.offset;
+                size_t length =
+                        (inputBufferInfo.length == 0) ? mapping.getSize() : inputBufferInfo.length;
+                if (!inputVxTensor->CopyDataToTensor(data, length)) {
+                    LOGE("Execution::startCompute failed to copy input data from memory");
+
+                    state_ = State::COMPLETED;
+                    return ANEURALNETWORKS_OP_FAILED;
+                }
+            } else if (const void* buffer = inputBufferInfo.buffer; buffer != nullptr) {
+                if (!inputVxTensor->CopyDataToTensor(buffer, inputBufferInfo.length)) {
+                    LOGE("Execution::startCompute failed to copy input data from user buffer");
+
+                    state_ = State::COMPLETED;
+                    return ANEURALNETWORKS_OP_FAILED;
+                }
+            } else {
+                LOGW("Execution::startCompute input:%zu has null buffer or memory", i);
+                continue;
+            }
+        }
+
+        if (!runtimeGraph_->Run()) {
+            LOGE("Execution::startCompute failed to run tim-vx graph");
+
+            state_ = State::COMPLETED;
+            return ANEURALNETWORKS_OP_FAILED;
+        }
+
+        for (size_t i = 0; i < outputVxTensors_.size(); i++) {
+            auto outputVxTensor = outputVxTensors_[i];
+            auto outputBufferInfo = outputBufferInfos_[i];
+
+            if (const auto* memory = outputBufferInfo.memory; memory != nullptr) {
+                auto mapping = memory->map();
+                void* data =
+                        reinterpret_cast<uint8_t*>(mapping.getData()) + outputBufferInfo.offset;
+                if (!outputVxTensor->CopyDataFromTensor(data)) {
+                    LOGE("Execution::startCompute failed to copy output data to memory");
+
+                    state_ = State::COMPLETED;
+                    return ANEURALNETWORKS_OP_FAILED;
+                }
+
+                const_cast<IMemory*>(memory)->setInitialized(true);
+            } else if (void* buffer = outputBufferInfo.buffer; buffer != nullptr) {
+                if (!outputVxTensor->CopyDataFromTensor(buffer)) {
+                    LOGE("Execution::startCompute failed to copy output data to user buffer");
+
+                    state_ = State::COMPLETED;
+                    return ANEURALNETWORKS_OP_FAILED;
+                }
+            } else {
+                LOGE("Execution::startCompute output:%zu has null buffer or memory", i);
+                state_ = State::COMPLETED;
+                return ANEURALNETWORKS_OP_FAILED;
+            }
+        }
+
+        syncEvent_->notify();
+        state_ = State::COMPLETED;
+        return ANEURALNETWORKS_NO_ERROR;
+    });
+
+    return syncEvent_->bindThread(std::move(asyncThread));
+}
+
+int Execution::getDuration(DurationCode durationCode, uint64_t* duration) const {
+    if (state_ != State::COMPLETED) {
+        LOGE("Execution::getDuration called when the execution is not in the completed state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    switch (durationCode) {
+        case ANEURALNETWORKS_DURATION_ON_HARDWARE:
+        case ANEURALNETWORKS_DURATION_IN_DRIVER:
+        case ANEURALNETWORKS_FENCED_DURATION_ON_HARDWARE:
+        case ANEURALNETWORKS_FENCED_DURATION_IN_DRIVER:
+            break;
+        default:
+            LOGE("Execution::getDuration passed an invalid duration code");
+            return ANEURALNETWORKS_BAD_DATA;
+    }
+
+    // The driver does not support timing measurement for now.
+    *duration = std::numeric_limits<uint64_t>::max();
+
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::getOutputOperandRank(int32_t index, uint32_t* rank) const {
+    if (state_ != State::COMPLETED) {
+        LOGE("Execution::getOutputOperandRank called when the execution is not in the completed "
+             "state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    auto* model = compilation_->getModel();
+    uint32_t output = model->getOutputs()[index];
+    auto& tensorMap = model->getTensorMap();
+    auto outputTensor = tensorMap[output];
+    *rank = outputTensor.shape.size();
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::getOutputOperandDimensions(int32_t index, uint32_t* dimensions) const {
+    if (state_ != State::COMPLETED) {
+        LOGE("Execution::getOutputOperandDimensions called when the execution is not in the "
+             "completed state");
+        return ANEURALNETWORKS_BAD_STATE;
+    }
+
+    auto* model = compilation_->getModel();
+    uint32_t output = model->getOutputs()[index];
+    auto& tensorMap = model->getTensorMap();
+    auto outputTensor = tensorMap[output];
+
+    const auto& shape = outputTensor.shape;
+    for (size_t i = 0; i < shape.size(); ++i) {
+        dimensions[i] = outputTensor.shape[i];
+    }
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+Execution::VxTensor Execution::createVxConstantTensor(const slang::type::tensor_storage& tensor,
+                                                      Model::OperandValueInfo valueInfo) {
+    tim::vx::DataType dtype = ToTvxDataType(tensor.dtype);
     tim::vx::ShapeType shape = tensor.shape;
     std::reverse(shape.begin(), shape.end());
     tim::vx::Quantization quantization;
-    tim::vx::QuantType quant_type = ToTvxQuantType(tensor.qtype);
-    if (quant_type == tim::vx::QuantType::ASYMMETRIC) {
-        quantization = tim::vx::Quantization(quant_type, tensor.scale, tensor.zero_point);
-    } else if (quant_type == tim::vx::QuantType::SYMMETRIC_PER_CHANNEL) {
-        quantization =
-                tim::vx::Quantization(quant_type, tensor.channel_dim, tensor.per_channel_scales,
-                                      tensor.per_channel_zero_points);
+    tim::vx::QuantType qtype = ToTvxQuantType(tensor.qtype);
+    if (qtype == tim::vx::QuantType::ASYMMETRIC) {
+        quantization = tim::vx::Quantization(qtype, tensor.scale, tensor.zero_point);
+    } else if (qtype == tim::vx::QuantType::SYMMETRIC_PER_CHANNEL) {
+        quantization = tim::vx::Quantization(qtype, tensor.channel_dim, tensor.per_channel_scales,
+                                             tensor.per_channel_zero_points);
     }
-    tim::vx::TensorSpec spec(data_type, shape, attr, quantization);
-    return vx_graph_->CreateIOTensor(spec);
+    tim::vx::TensorSpec spec(dtype, shape, tim::vx::TensorAttribute::CONSTANT, quantization);
+
+    if (const auto* memory = valueInfo.memory; memory != nullptr) {
+        auto mapping = memory->map();
+        const void* data = reinterpret_cast<uint8_t*>(mapping.getData()) + valueInfo.offset;
+        return vxGraph_->CreateTensor(spec, data);
+    }
+
+    return vxGraph_->CreateTensor(spec, valueInfo.buffer);
 }
 
-int Execution::SetInput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
-                        size_t length) {
-    if (type != nullptr) {
-        Model* model = compilation_->GetModel();
-        int32_t input = model->Inputs()[index];
-        auto& tensors = model->Tensors();
-        auto& input_tensor = tensors[input];
-        if (input_tensor.dtype != MapDataType(type->type) || input_tensor.scale != type->scale ||
-            input_tensor.zero_point != type->zeroPoint) {
-            std::cout << "Get invalid ANeuralNetworksOperandType when setting input." << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
-        }
-        inputs_dimension_[index] =
-                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
-        input_tensor.shape = inputs_dimension_[index];
+Execution::VxTensor Execution::createVxIOTensor(const slang::type::tensor_storage& tensor,
+                                                tim::vx::TensorAttribute attr) {
+    tim::vx::DataType dtype = ToTvxDataType(tensor.dtype);
+    tim::vx::ShapeType shape = tensor.shape;
+    std::reverse(shape.begin(), shape.end());
+    tim::vx::Quantization quantization;
+    tim::vx::QuantType qtype = ToTvxQuantType(tensor.qtype);
+    if (qtype == tim::vx::QuantType::ASYMMETRIC) {
+        quantization = tim::vx::Quantization(qtype, tensor.scale, tensor.zero_point);
+    } else if (qtype == tim::vx::QuantType::SYMMETRIC_PER_CHANNEL) {
+        quantization = tim::vx::Quantization(qtype, tensor.channel_dim, tensor.per_channel_scales,
+                                             tensor.per_channel_zero_points);
     }
-    Memory* mem = new Memory();  //this mem not hold data in memory, only hold data pointer
-    mem->SetData(const_cast<void*>(buffer));
-    mem->SetLength(length);
-    inputs_memory_[index] = IOMemory(mem, 0, length);
-    free(mem);
-    return ANEURALNETWORKS_NO_ERROR;
+    tim::vx::TensorSpec spec(dtype, shape, attr, quantization);
+    return vxGraph_->CreateIOTensor(spec);
 }
 
-int Execution::SetOutput(int32_t index, const ANeuralNetworksOperandType* type, const void* buffer,
-                        size_t length) {
-    if (type != nullptr) {
-        Model* model = compilation_->GetModel();
-        int32_t output = model->Outputs()[index];
-        auto& tensors = model->Tensors();
-        auto& output_tensor = tensors[output];
-        if (output_tensor.dtype != MapDataType(type->type) || output_tensor.scale != type->scale ||
-            output_tensor.zero_point != type->zeroPoint) {
-            std::cout << "Get invalid ANeuralNetworksOperandType when setting output." << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
-        }
-        outputs_dimension_[index] =
-                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
-        output_tensor.shape = outputs_dimension_[index];
-    }
-    Memory* mem = new Memory();
-    mem->SetData(const_cast<void*>(buffer));
-    mem->SetLength(length);
-    outputs_memory_[index] = IOMemory(mem, 0, length);
-    free(mem);
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_creators,
-                             const TensorMap& tensor_map, const ScalarMap& scalar_map) {
-    for (const auto op_creator : op_creators) {
-        const std::vector<uint32_t>& inputs = op_creator->Inputs();
-        const std::vector<uint32_t>& outputs = op_creator->Outputs();
+int Execution::mapOperations(const std::vector<std::shared_ptr<OpCreator>>& opCreators,
+                             const TensorMap& tensorMap, const ScalarMap& scalarMap) {
+    for (const auto& opCreator : opCreators) {
+        const auto& inputs = opCreator->getInputs();
+        const auto& outputs = opCreator->getOutputs();
         int result = ANEURALNETWORKS_NO_ERROR;
-        switch (op_creator->Type()) {
+        switch (opCreator->getType()) {
             case ANEURALNETWORKS_ABS:
             case ANEURALNETWORKS_ARGMAX:
             case ANEURALNETWORKS_ARGMIN:
@@ -164,386 +608,283 @@ int Execution::MapOperations(const std::vector<std::shared_ptr<OpCreator>>& op_c
             case ANEURALNETWORKS_TANH:
             case ANEURALNETWORKS_TILE:
             case ANEURALNETWORKS_TRANSPOSE:
-                result = MapOneInputOneOutput(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                              scalar_map, inputs, outputs);
+                result = MapOneInputOneOutput(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                              inputs, outputs);
                 break;
             case ANEURALNETWORKS_ADD:
-                result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
+                result = MapEltwise(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                    outputs);
                 break;
             case ANEURALNETWORKS_AVERAGE_POOL_2D:
-                result = MapPool2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapPool2D(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_BATCH_MATMUL:
-                result = MapBatchMatmul(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapBatchMatmul(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                         inputs, outputs);
                 break;
             case ANEURALNETWORKS_CONCATENATION:
-                result = MapConcatenation(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                          scalar_map, inputs, outputs);
+                result = MapConcatenation(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_CONV_2D:
-                result = MapConv2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapConv2D(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_DEPTHWISE_CONV_2D:
-                result = MapDepthwiseConv2D(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                            scalar_map, inputs, outputs);
+                result = MapDepthwiseConv2D(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                            inputs, outputs);
                 break;
             case ANEURALNETWORKS_DIV:
-                result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
+                result = MapEltwise(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                    outputs);
                 break;
             case ANEURALNETWORKS_EMBEDDING_LOOKUP:
-                result = MapEmbeddingLookup(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                            scalar_map, inputs, outputs);
+                result = MapEmbeddingLookup(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                            inputs, outputs);
                 break;
             case ANEURALNETWORKS_EQUAL:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_FULLY_CONNECTED:
-                result = MapFullyConnected(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                           scalar_map, inputs, outputs);
+                result = MapFullyConnected(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                           inputs, outputs);
                 break;
             case ANEURALNETWORKS_GATHER:
-                result = MapGather(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapGather(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_GREATER:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_GREATER_EQUAL:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_GROUPED_CONV_2D:
-                result = MapGroupedConv2d(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                          scalar_map, inputs, outputs);
+                result = MapGroupedConv2d(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_HASHTABLE_LOOKUP:
-                result = MapHashtableLookup(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                            scalar_map, inputs, outputs);
+                result = MapHashtableLookup(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                            inputs, outputs);
                 break;
             case ANEURALNETWORKS_INSTANCE_NORMALIZATION:
-                result = MapInstanceNormalization(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                                  scalar_map, inputs, outputs);
+                result = MapInstanceNormalization(vxGraph_, opCreator, vxTensors_, tensorMap,
+                                                  scalarMap, inputs, outputs);
                 break;
             case ANEURALNETWORKS_LESS:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_LESS_EQUAL:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_LOGICAL_AND:
-                result = MapLogicalAndOr(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapLogicalAndOr(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_LOGICAL_OR:
-                result = MapLogicalAndOr(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapLogicalAndOr(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_L2_POOL_2D:
-                result = MapPool2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapPool2D(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_MAX_POOL_2D:
-                result = MapPool2D(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapPool2D(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_MAXIMUM:
-                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                             scalar_map, inputs, outputs);
+                result = MapEltwiseWithNoAct(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                             inputs, outputs);
                 break;
             case ANEURALNETWORKS_MINIMUM:
-                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                             scalar_map, inputs, outputs);
+                result = MapEltwiseWithNoAct(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                             inputs, outputs);
                 break;
             case ANEURALNETWORKS_MUL:
-                result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
+                result = MapEltwise(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                    outputs);
                 break;
             case ANEURALNETWORKS_NOT_EQUAL:
-                result = MapRelationalOp(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+                result = MapRelationalOp(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
                                          inputs, outputs);
                 break;
             case ANEURALNETWORKS_PACK:
-                result = MapPack(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                result = MapPack(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
                                  outputs);
                 break;
             case ANEURALNETWORKS_POW:
-                result = MapEltwiseWithNoAct(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                             scalar_map, inputs, outputs);
+                result = MapEltwiseWithNoAct(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                             inputs, outputs);
                 break;
             case ANEURALNETWORKS_PRELU:
-                result = MapPrelu(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                  inputs, outputs);
+                result = MapPrelu(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                  outputs);
                 break;
             case ANEURALNETWORKS_ROI_ALIGN:
-                result = MapRoi(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                result = MapRoi(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
                                 outputs);
                 break;
             // case ANEURALNETWORKS_ROI_POOLING:  // not support roi_pooling at present
-            //     result = MapRoi(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+            //     result = MapRoi(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
+            //     inputs,
             //                     outputs);
             //     break;
             case ANEURALNETWORKS_SELECT:
-                result = MapSelect(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                   inputs, outputs);
+                result = MapSelect(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                   outputs);
                 break;
             case ANEURALNETWORKS_SPLIT:
-                result = MapSplit(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                  inputs, outputs);
+                result = MapSplit(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                  outputs);
                 break;
             case ANEURALNETWORKS_SUB:
-                result = MapEltwise(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map,
-                                    inputs, outputs);
+                result = MapEltwise(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
+                                    outputs);
                 break;
             case ANEURALNETWORKS_SVDF:
-                result = MapSvdf(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                result = MapSvdf(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
                                  outputs);
                 break;
             case ANEURALNETWORKS_TOPK_V2:
-                result = MapTopK(vx_graph_, op_creator, vx_tensors_, tensor_map, scalar_map, inputs,
+                result = MapTopK(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap, inputs,
                                  outputs);
                 break;
             case ANEURALNETWORKS_TRANSPOSE_CONV_2D:
-                result = MapTransposeConv2d(vx_graph_, op_creator, vx_tensors_, tensor_map,
-                                            scalar_map, inputs, outputs);
+                result = MapTransposeConv2d(vxGraph_, opCreator, vxTensors_, tensorMap, scalarMap,
+                                            inputs, outputs);
                 break;
             default:
-                std::cout << "Op type: " << op_creator->Type() << " is not supported" << std::endl;
+                LOGE("Execution::mapOperation op type: %d not supported", opCreator->getType());
                 result = ANEURALNETWORKS_BAD_STATE;
         }
-        if (result != ANEURALNETWORKS_NO_ERROR) return result;
-    }
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int Execution::SetInputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
-                                  const Memory* memory, size_t offset, size_t length) {
-    if (type != nullptr) {
-        Model* model = compilation_->GetModel();
-        int32_t input = model->Inputs()[index];
-        auto& tensors = model->Tensors();
-        auto& input_tensor = tensors[input];
-        if (input_tensor.dtype != MapDataType(type->type) || input_tensor.scale != type->scale ||
-            input_tensor.zero_point != type->zeroPoint) {
-            std::cout << "Get invalid ANeuralNetworksOperandType when setting input." << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
-        }
-        inputs_dimension_[index] =
-                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
-        input_tensor.shape = inputs_dimension_[index];
-    }
-    auto mem = const_cast<Memory*>(memory);
-    if (mem->IsCreateFromAHWB()) {
-        mem->PraseAHWB(mem->AHWB());
-    }
-    if (mem->IsCreateFromDesc()) {
-        length = memory->Length();
-    }
-    inputs_memory_[index] = IOMemory(memory, offset, length);
-
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int Execution::SetOutputFromMemory(int32_t index, const ANeuralNetworksOperandType* type,
-                                   const Memory* memory, size_t offset, size_t length) {
-    if (type != nullptr) {
-        Model* model = compilation_->GetModel();
-        int32_t output = model->Outputs()[index];
-        auto& tensors = model->Tensors();
-        auto& output_tensor = tensors[output];
-        if (output_tensor.dtype != MapDataType(type->type) || output_tensor.scale != type->scale ||
-            output_tensor.zero_point != type->zeroPoint) {
-            std::cout << "Get invalid ANeuralNetworksOperandType when setting output." << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
-        }
-        outputs_dimension_[index] =
-                std::vector<uint32_t>(type->dimensions, type->dimensions + type->dimensionCount);
-        output_tensor.shape = outputs_dimension_[index];
-    }
-    if (memory->IsCreateFromDesc()) {
-        length = memory->Length();
-    }
-    outputs_memory_[index] = IOMemory(memory, offset, length);
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int Execution::Compute() {
-    Model* model = compilation_->GetModel();
-    // This function will be called multiple times, and need to judge whether it is the first call
-    if (vx_graph_ == nullptr) {
-        output_order_.clear();
-        out_memory_order_.clear();  // Reset this two vector for new graphs
-        vx_graph_ = vx_context_->CreateGraph();
-        auto tensor_map = model->Tensors();
-        auto scalar_map = model->Scalars();
-        auto operations = model->Operations();
-        for (uint32_t in : model->Inputs()) {
-            vx_tensors_[in] = CreateTvxIOTensor(tensor_map[in], tim::vx::TensorAttribute::INPUT);
-        }
-        for (uint32_t out : model->Outputs()) {
-            vx_tensors_[out] = CreateTvxIOTensor(tensor_map[out], tim::vx::TensorAttribute::OUTPUT);
-        }
-        int result = MapOperations(operations, tensor_map, scalar_map);
         if (result != ANEURALNETWORKS_NO_ERROR) {
-            std::cout << "map operation fail" << std::endl;
+            return result;
+        }
+    }
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+int Execution::compile() {
+    auto context = compilation_->getContext();
+    const auto* model = compilation_->getModel();
+    const auto& inputs = model->getInputs();
+    const auto& outputs = model->getOutputs();
+    const auto& tensorMap = model->getTensorMap();
+    const auto& scalarMap = model->getScalarMap();
+    const auto& operandValuesInfoMap = model->getOperandValueInfos();
+    const auto& operations = model->getOpCreators();
+
+    // Check for output tensor with dynamic axis.
+    for (size_t i = 0; i < outputs.size(); i++) {
+        uint32_t output = outputs[i];
+        auto outputTensor = tensorMap.at(output);
+
+        bool hasDynamicAxis = std::any_of(outputTensor.shape.begin(), outputTensor.shape.end(),
+                                          [](uint32_t s) { return s == 0; });
+        if (hasDynamicAxis) {
+            LOGE("Execution::compile output:%zu has dynamic axis which is not supported", i);
+            return ANEURALNETWORKS_OP_FAILED;
+        }
+    }
+
+    vxGraph_ = context->CreateGraph();
+
+    // Create I/O vx tensors.
+    for (uint32_t input : inputs) {
+        auto inputTensor = tensorMap.at(input);
+        vxTensors_[input] = createVxIOTensor(inputTensor, tim::vx::TensorAttribute::INPUT);
+    }
+    for (uint32_t output : outputs) {
+        auto outputTensor = tensorMap.at(output);
+        vxTensors_[output] = createVxIOTensor(outputTensor, tim::vx::TensorAttribute::OUTPUT);
+    }
+
+    if (compilation_->getCacheState() == Compilation::CacheState::LOADED) {
+        auto nbg = vxGraph_->CreateOperation<tim::vx::ops::NBG>(
+                reinterpret_cast<const char*>(compilation_->getCacheData()), inputs.size(),
+                outputs.size());
+        for (uint32_t input : inputs) {
+            auto inputTensor = vxTensors_[input];
+            nbg->BindInput(inputTensor);
+        }
+        for (uint32_t output : outputs) {
+            auto outputTensor = vxTensors_[output];
+            nbg->BindOutput(outputTensor);
+        }
+    } else {
+        // Create constant vx tensors.
+        for (const auto& [operandIndex, tensor] : tensorMap) {
+            if (auto it = operandValuesInfoMap.find(operandIndex);
+                it != operandValuesInfoMap.end()) {
+                auto [_, valueInfo] = *it;
+                if (valueInfo.buffer == nullptr && valueInfo.memory == nullptr) {
+                    valueInfo.buffer = model->getConstantCopyData(valueInfo.offset);
+                }
+                vxTensors_[operandIndex] = createVxConstantTensor(tensor, valueInfo);
+            }
+        }
+
+        int result = mapOperations(operations, tensorMap, scalarMap);
+        if (result != ANEURALNETWORKS_NO_ERROR) {
+            LOGE("Execution::compile failed to map operations");
             return result;
         }
 
-        layout_infered_ = tim::transform::LayoutInference(vx_graph_, vx_context_);
-        auto infer_outputs = layout_infered_.first->OutputsTensor();
-        auto src_outputs = vx_graph_->OutputsTensor();
-        auto graph_io_map = layout_infered_.second;
-        // Confirm output order between infer_graph and src_graph
-        for (int i = 0; i < src_outputs.size(); ++i) {
-            auto infer_out = graph_io_map[src_outputs[i]];
-            for (int j = 0; j < infer_outputs.size(); ++j) {
-                if (infer_out == infer_outputs[j]) {
-                    output_order_.push_back(model->Outputs()[j]);
-                    out_memory_order_.push_back(j);
-                }
-            }
-        }
-#ifdef RUN_NBG
-        // compile graph to executable, just use the first device
-        auto device = compilation_->Devices()[0]->Device();
-#ifdef USE_GRPC
-        executor_ = std::make_shared<tim::vx::platform::GRPCRemoteExecutor>(device);
-#else
-        executor_ = std::make_shared<tim::vx::platform::NativeExecutor>(device);
-#endif
-        executable_ = executor_->Compile(layout_infered_.first);
-        input_handles_.clear();
-        output_handles_.clear();
-        for (uint32_t i : model->Inputs()) {
-            auto input_handle = executable_->AllocateTensor(vx_tensors_[i]->GetSpec());
-            executable_->SetInput(input_handle);
-            input_handles_.push_back(input_handle);
-        }
-        for (uint32_t o : output_order_) {
-            auto output_handle = executable_->AllocateTensor(vx_tensors_[o]->GetSpec());
-            executable_->SetOutput(output_handle);
-            output_handles_.push_back(output_handle);
-        }
-#endif
+        auto [vxGraph, _] = tim::transform::LayoutInference(vxGraph_, context);
+        auto inputTensors = vxGraph->InputsTensor();
+        auto outputTensors = vxGraph->OutputsTensor();
 
-        auto inputs = model->Inputs();
-        for (int i = 0; i < inputs.size(); ++i) {
-#ifdef RUN_NBG
-            auto input_handle = input_handles_[i];
-            auto io_memory = inputs_memory_[i];
-#else
-            uint32_t index = inputs[i];
-            auto src_input_tensor = vx_tensors_[index];
-            auto io_memory = inputs_memory_[i];
-#endif
-            auto memory = io_memory.memory;
-            size_t offset = io_memory.offset;
-            size_t length = io_memory.length;
-            if (memory != nullptr) {
-                if (offset + length > memory->Length()) {
-                    std::cout << "input memory is out of range." << std::endl;
-                    return ANEURALNETWORKS_OUT_OF_MEMORY;
-                }
-                uint8_t* data = reinterpret_cast<uint8_t*>(memory->Data());
-#ifdef RUN_NBG
-                if (!input_handle->CopyDataToTensor(reinterpret_cast<void*>(data + offset),
-                                                    length)) {
-                    std::cout << "copy data to tensor fail." << std::endl;
-                    return ANEURALNETWORKS_BAD_STATE;
-                }
-#else
-                auto infered_input_tensor = layout_infered_.second[src_input_tensor];
-                if (infered_input_tensor) {
-                    if (!infered_input_tensor->CopyDataToTensor(
-                                reinterpret_cast<void*>(data + offset), length)) {
-                        std::cout << "copy data to tensor fail." << std::endl;
-                        return ANEURALNETWORKS_BAD_STATE;
-                    }
-                } else {
-                    std::cout << "tensor in source graph removed before do layout "
-                                 "inference - if zero sized tensor involved"
-                              << std::endl;
-                }
-#endif
-            }
+        for (size_t i = 0; i < inputs.size(); i++) {
+            uint32_t input = inputs[i];
+            vxTensors_[input] = inputTensors[i];
         }
-#ifdef RUN_NBG
-        executable_->Submit(executable_);
-#endif
-    } else if (reusable_ == false) {
-        std::cout << "try to schedule multiple computations for a Execution which is not reusable"
-                  << std::endl;
-        return ANEURALNETWORKS_BAD_STATE;
+        for (size_t i = 0; i < outputs.size(); i++) {
+            uint32_t output = outputs[i];
+            vxTensors_[output] = outputTensors[i];
+        }
+
+        if (compilation_->getCacheState() == Compilation::CacheState::EMPTY) {
+            size_t nbgSize;
+            if (!vxGraph->CompileToBinary(nullptr, &nbgSize)) {
+                LOGE("Execution::compile failed to compile tim-vx graph");
+                return ANEURALNETWORKS_OP_FAILED;
+            }
+
+            std::vector<uint8_t> nbgBuffer(nbgSize);
+            if (!vxGraph->CompileToBinary(nbgBuffer.data(), &nbgSize)) {
+                LOGE("Execution::compile failed to compile tim-vx graph");
+                return ANEURALNETWORKS_OP_FAILED;
+            }
+
+            compilation_->writeToCache(nbgBuffer.data(), nbgSize);
+        }
+
+        vxGraph_ = vxGraph;
     }
 
-#ifdef RUN_NBG
-    executor_->Trigger();
-#else
-    // Run graph
-    if (!layout_infered_.first->Run()) {
-        std::cout << "failed to run graph." << std::endl;
-        return ANEURALNETWORKS_BAD_STATE;
+    if (!vxGraph_->Compile()) {
+        LOGE("Execution::compile failed to compile tim-vx graph");
+        return ANEURALNETWORKS_OP_FAILED;
     }
-#endif
-    // copy output to memory
-    for (int i = 0; i < output_order_.size(); ++i) {
-#ifdef RUN_NBG
-        auto output_handle = output_handles_[i];
-#else
-        uint32_t index = output_order_[i];
-        auto src_output_tensor = vx_tensors_[index];
-#endif
-        auto io_memory = outputs_memory_[out_memory_order_[i]];
-        auto memory = io_memory.memory;
-        size_t offset = io_memory.offset;
-        size_t length = io_memory.length;
-        if (offset + length > memory->Length()) {
-            std::cout << "output memory is out of range." << std::endl;
-            return ANEURALNETWORKS_BAD_DATA;
-        }
-        uint8_t* data = reinterpret_cast<uint8_t*>(memory->Data());
-#ifdef RUN_NBG
-        if (!output_handle->CopyDataFromTensor(reinterpret_cast<void*>(data + offset))) {
-            std::cout << "copy data from tensor fail." << std::endl;
-            return ANEURALNETWORKS_BAD_STATE;
-        }
-#else
-        auto infered_output_tesnor = layout_infered_.second[src_output_tensor];
-        if (infered_output_tesnor) {
-            if (!infered_output_tesnor->CopyDataFromTensor(
-                        reinterpret_cast<void*>(data + offset))) {
-                std::cout << "copy data from tensor fail." << std::endl;
-                return ANEURALNETWORKS_BAD_STATE;
-            }
-        } else {
-            std::cout << "Output tensor missing: report issue to VSI" << std::endl;
-        }
-#endif
+
+    compilation_->setCompiledGraph(vxGraph_);
+
+    for (uint32_t input : inputs) {
+        inputVxTensors_.push_back(vxTensors_[input]);
     }
+    for (uint32_t output : outputs) {
+        outputVxTensors_.push_back(vxTensors_[output]);
+    }
+    runtimeGraph_ = vxGraph_;
+
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-int Execution::GetOutputOperandRank(int32_t index, uint32_t* rank) {
-    *rank = outputs_dimension_[index].size();
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-int Execution::GetOutputOperandDimensions(int32_t index, uint32_t* dimensions) {
-    auto dim = outputs_dimension_[index];
-    for (int i = 0; i < dim.size(); ++i) {
-        dimensions[i] = dim[i];
-    }
-    return ANEURALNETWORKS_NO_ERROR;
-}
-
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl

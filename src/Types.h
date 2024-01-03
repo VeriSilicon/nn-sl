@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,44 +21,27 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_TYPE_H
 #define VSI_ANDROID_SL_TYPE_H
 
+#include <android/NeuralNetworksTypes.h>
+
+#include <chrono>
 #include <vector>
 
-#include <android/NeuralNetworksTypes.h>
 #include "tim/vx/tensor.h"
 #include "tim/vx/types.h"
 
-namespace vsi {
-namespace android {
-namespace sl {
+namespace vsi::android::sl {
 
-enum class IOType { INPUT, OUTPUT };
-struct Operand {
-    Operand(ANeuralNetworksOperandType type) : type_info(type) {}
+using Shape = std::vector<uint32_t>;
 
-    ANeuralNetworksOperandType type_info;
+using Clock = std::chrono::steady_clock;
+using Duration = std::chrono::nanoseconds;
+using TimePoint = std::chrono::time_point<Clock, Duration>;
 
-    // symmetric per-channel quantized parameters
-    std::vector<float> scales;
-    uint32_t channel_dim;
-
-    bool is_small_value{false};
-    // store small value by copy
-    std::vector<uint8_t> small_value;
-    // sotre large value by reference
-    const void* buffer{nullptr};
-    size_t length{0};
-};
-
-struct Operation {
-    ANeuralNetworksOperationType type;
-    std::vector<uint32_t> inputs;
-    std::vector<uint32_t> outputs;
-};
-
-enum class MemoryType { FD, DESC, AHB };
+enum class IOType { NONE, INPUT, OUTPUT };
 
 /**
  * Operand types.
@@ -221,97 +204,6 @@ enum class OperandType {
     TENSOR_OEM_BYTE = 10001,
 };
 
-/**
- * The capabilities of a driver.
- *
- * This represents performance of non-extension operations.
- */
-struct Capabilities {
-    /**
-     * Performance information for the reference workload.
-     *
-     * Used by a driver to report its performance characteristics.
-     */
-    struct PerformanceInfo {
-        /**
-         * Ratio of the time taken by the driver to execute the
-         * workload compared to the time the CPU would take for the
-         * same workload. A lower number is better.
-         */
-        float execTime = 0;
-
-        /**
-         * Ratio of the energy used by the driver compared to what
-         * the CPU would use for doing the same workload. A lower number
-         * is better.
-         */
-        float powerUsage = 0;
-    };
-
-    /**
-     * Driver performance when operating on a particular data type.
-     * In the case of float32 data, this is used when the calculations
-     * are not relaxed.
-     */
-    struct OperandPerformance {
-        OperandType type{};
-        PerformanceInfo info;
-    };
-
-    class OperandPerformanceTable {
-       public:
-    //     static Result<OperandPerformanceTable> create(
-    //             std::vector<OperandPerformance> operandPerformances);
-
-    //     PerformanceInfo lookup(OperandType type) const;
-    //     const std::vector<OperandPerformance>& asVector() const;
-
-    //    private:
-        explicit OperandPerformanceTable(std::vector<OperandPerformance> operandPerformances)
-            : Sorted(std::move(operandPerformances)) {}
-        std::vector<OperandPerformance> Sorted;
-    };
-
-    /**
-     * Driver performance when operating on float32 data but performing
-     * calculations with range and/or precision as low as that of the IEEE
-     * 754 16-bit floating-point format.
-     */
-    PerformanceInfo relaxedFloat32toFloat16PerformanceScalar;
-    PerformanceInfo relaxedFloat32toFloat16PerformanceTensor;
-
-    /**
-     * Performance by operand type. Must be sorted by OperandType.
-     *
-     * If a particular {@link OperandType} is not present in operandPerformance,
-     * its performance is treated as
-     * { .execTime = FLT_MAX, .powerUsage = FLT_MAX }.
-     *
-     * Performance does not apply to {@link OperandType::SUBGRAPH}, and a driver
-     * must not report operand performance for {@link OperandType::SUBGRAPH}.
-     */
-    OperandPerformanceTable operandPerformance;
-
-    /**
-     * Performance of an {@link OperationType::IF} operation is the sum of
-     * {@link Capabilities::ifPerformance} and the mean of performance for the
-     * two branch subgraphs, where performance for a subgraph is the sum of the
-     * performance of all operations within the subgraph.
-     */
-    PerformanceInfo ifPerformance;
-
-    /**
-     * Performance of a {@link OperationType::WHILE} operation is the sum of
-     * {@link Capabilities::whilePerformance}, performance for the condition
-     * subgraph and performance for the body subgraph, where performance for a
-     * subgraph is the sum of the performance of all operations within the
-     * subgraph.
-     */
-    PerformanceInfo whilePerformance;
-};
-
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+}  // namespace vsi::android::sl
 
 #endif

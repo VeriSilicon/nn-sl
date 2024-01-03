@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2022 Vivante Corporation
+ *    Copyright (c) 2024 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -21,69 +21,83 @@
  *    DEALINGS IN THE SOFTWARE.
  *
  *****************************************************************************/
+
 #ifndef VSI_ANDROID_SL_MODEL_H
 #define VSI_ANDROID_SL_MODEL_H
+
+#include <android/NeuralNetworksTypes.h>
+
 #include <unordered_map>
 #include <vector>
 
-#include <android/NeuralNetworksTypes.h>
+#include "Memory.h"
 #include "OpCreator.h"
 #include "Types.h"
 #include "tim/vx/tensor.h"
-#include "Memory.h"
-namespace vsi {
-namespace android {
-namespace sl {
+
+namespace vsi::android::sl {
 
 class Model {
    public:
-    Model() : operand_id_(0), relaxed_(false), finished_(false) {}
-    int AddOperand(const ANeuralNetworksOperandType& type);
-    int SetOperandSymmPerChannelQuantParams(
-            int32_t index, const ANeuralNetworksSymmPerChannelQuantParams& channelQuant);
-    int SetOperandValue(uint32_t index, const void* buffer, size_t length);
-    int SetOperandValueFromMemory(int32_t index, const Memory* memory, size_t offset,
-                                  size_t length);
-    int AddOperation(ANeuralNetworksOperationType type, uint32_t inputCount, const uint32_t* inputs,
-                     uint32_t outputCount, const uint32_t* outputs);
-    int IdentifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs, uint32_t outputCount,
-                                 const uint32_t* outputs);
-    int RelaxComputationFloat32toFloat16(bool allow) {
-        if (finished_) {
-            std::cout << "can not modify a finished model." << std::endl;
-            return ANEURALNETWORKS_BAD_STATE;
-        }
-        relaxed_ = allow;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int Finish() {
-        finished_ = true;
-        return ANEURALNETWORKS_NO_ERROR;
-    }
-    int GetSupportedOperations(bool* supported_ops) const;
-    const TensorMap& Tensors() const { return tensors_; }
-    const ScalarMap& Scalars() const { return scalars_; }
-    TensorMap& Tensors() { return tensors_; }
-    ScalarMap& Scalars() { return scalars_; }
-    std::vector<std::shared_ptr<OpCreator>>& Operations() { return op_creators_; }
+    struct OperandValueInfo {
+        size_t size;
+        size_t offset;  // Offset in const copy storage.
+        const void* buffer;
+        const IMemory* memory;
+    };
+    using OperandValueInfoMap = std::unordered_map<uint32_t, OperandValueInfo>;
 
-    const std::vector<uint32_t>& Inputs() { return inputs_; }
-    const std::vector<uint32_t>& Outputs() { return outputs_; }
-    bool IsRelaxed() { return relaxed_; }
+    int addOperand(const ANeuralNetworksOperandType& type);
+    int setOperandSymmPerChannelQuantParams(
+            int32_t index, const ANeuralNetworksSymmPerChannelQuantParams& channelQuant);
+    int setOperandValue(int32_t index, const void* buffer, size_t length);
+    int setOperandValueFromMemory(int32_t index, const IMemory* memory, size_t offset,
+                                  size_t length);
+    int setOperandValueFromModel(int32_t index, const Model* reference);
+    int addOperation(ANeuralNetworksOperationType type, uint32_t inputCount, const uint32_t* inputs,
+                     uint32_t outputCount, const uint32_t* outputs);
+    int identifyInputsAndOutputs(uint32_t inputCount, const uint32_t* inputs, uint32_t outputCount,
+                                 const uint32_t* outputs);
+    int relaxComputationFloat32toFloat16(bool relaxed);
+    int getSupportedOperations(bool* supportedOps) const;
+    int finish();
+
+    TensorMap& getTensorMap() { return tensors_; }
+    ScalarMap& getScalarMap() { return scalars_; }
+    [[nodiscard]] const TensorMap& getTensorMap() const { return tensors_; }
+    [[nodiscard]] const ScalarMap& getScalarMap() const { return scalars_; }
+    [[nodiscard]] const OperandValueInfoMap& getOperandValueInfos() const {
+        return operandValueInfos_;
+    }
+    [[nodiscard]] const void* getConstantCopyData(size_t offset) const {
+        return constantCopyStorage_.data() + offset;
+    };
+    [[nodiscard]] const std::vector<std::shared_ptr<OpCreator>>& getOpCreators() const {
+        return opCreators_;
+    }
+
+    std::vector<uint32_t>& getInputs() { return inputs_; }
+    std::vector<uint32_t>& getOutputs() { return outputs_; }
+    [[nodiscard]] const std::vector<uint32_t>& getInputs() const { return inputs_; }
+    [[nodiscard]] const std::vector<uint32_t>& getOutputs() const { return outputs_; }
+    [[nodiscard]] bool isRelaxed() const { return relaxed_; }
+    [[nodiscard]] bool isFinished() const { return finished_; }
 
    private:
     TensorMap tensors_;
     ScalarMap scalars_;
-    std::vector<std::shared_ptr<OpCreator>> op_creators_;
-    std::vector<bool> op_supports_;
-    std::unordered_map<uint32_t, std::vector<uint8_t>> constant_copy_;
+    OperandValueInfoMap operandValueInfos_;
+    std::vector<const Model*> referenceModels_;
+    std::vector<std::shared_ptr<OpCreator>> opCreators_;
+    std::vector<bool> opSupported_;
+    std::vector<uint8_t> constantCopyStorage_;
     std::vector<uint32_t> inputs_;
     std::vector<uint32_t> outputs_;
-    int32_t operand_id_;
-    bool relaxed_;
-    bool finished_;
+
+    uint32_t numOperands_ = 0;
+    bool relaxed_ = false;
+    bool finished_ = false;
 };
-}  // namespace sl
-}  // namespace android
-}  // namespace vsi
+
+}  // namespace vsi::android::sl
 #endif
