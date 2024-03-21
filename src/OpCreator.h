@@ -794,6 +794,7 @@ class DepthwiseConv2DCreator final : public OpCreator {
         }
         auto kernel_attr = tensorMap.at(idx_bias).attr;
         if (kernel_attr != slang::type::tensor_attr::kCONSTANT) {
+            // Fail on target 8mq/8mn/8qxp/8ulp
             LOGI("DepthwiseConv2DCreator: Cannot support non-const weight");
             supported_ = false;
         }
@@ -1521,11 +1522,7 @@ class InstanceNormalizationCreator final : public OpCreator {
         uint32_t idx_out = outputs[0];
         auto gamma_type = scalarMap.at(inputs[1]).dtype;
         auto beta_type = scalarMap.at(inputs[2]).dtype;
-        if (gamma_type == slang::type::data_type::kFP16 &&
-            beta_type == slang::type::data_type::kFP16) {
-            LOGI("InstanceNormalizationCreator: Cannot support f16 gamma & beta");
-            supported_ = false;
-        }
+
         std::get<0>(signature.field_tuple) =
                 op::instance_normalization::Input(tensorMap.at(idx_in));
         std::get<1>(signature.field_tuple) =
@@ -1542,6 +1539,7 @@ class InstanceNormalizationCreator final : public OpCreator {
         const uint8_t* p_layout = std::get<3>(signature.field_tuple).storage.data.data();
         auto input_type = std::get<0>(signature.field_tuple).storage.dtype;
         auto layout = convertToVxLayout(*(bool*)p_layout);
+        layout_ = layout;
         if (input_type == slang::type::data_type::kFP16) {
             return graph->CreateOperation<tim::vx::ops::InstanceNormalization>(
                     *(_Float16*)p_epsilon, layout);
@@ -1551,7 +1549,10 @@ class InstanceNormalizationCreator final : public OpCreator {
         }
     }
 
+    [[nodiscard]] tim::vx::DataLayout getLayout() const { return layout_; }
+
    private:
+    tim::vx::DataLayout layout_;
     op::instance_normalization::signature signature;
 };
 
@@ -2432,14 +2433,26 @@ class PadCreator final : public OpCreator {
         uint32_t idx_in_pad = inputs[1];
         uint32_t idx_out = outputs[0];
 
-        auto pad_attr = tensorMap.at(idx_in_pad).attr;
-        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
-            LOGI("PadCreator: Pad tensor as INPUT in Pad");
-            supported_ = false;
-        }
         auto p_pad = (int32_t*)tensorMap.at(idx_in_pad).data.data();
         uint32_t pad_length = tensorMap.at(idx_in_pad).data.size() / 4;
         std::vector<int32_t> pad(p_pad, p_pad + pad_length);
+
+        auto pad_attr = tensorMap.at(idx_in_pad).attr;
+        uint32_t rank = tensorMap.at(idx_in).shape.size();
+        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
+            LOGI("PadCreator: Cannot support pad tensor as INPUT in Pad");
+            supported_ = false;
+        } else {
+            std::vector<uint32_t> front_size, back_size;
+            for (int i = 0; i < rank; ++i) {
+                front_size.push_back(*(p_pad + i * 2));
+                back_size.push_back(*(p_pad + i * 2 + 1));
+            }
+            if (rank ==  4 && (front_size[0] != 0 || back_size[0] != 0)) {
+                LOGI("PadCreator: Cannot support padding on batch in PadV2");
+                supported_ = false;
+            }
+        }
 
         std::get<0>(signature.field_tuple) = op::pad::Input(tensorMap.at(idx_in));
         std::get<1>(signature.field_tuple) = op::pad::Output(tensorMap.at(idx_out));
@@ -2481,11 +2494,6 @@ class PadV2Creator final : public OpCreator {
         uint32_t idx_const_val = inputs[2];
         uint32_t idx_out = outputs[0];
 
-        auto pad_attr = tensorMap.at(idx_in_pad).attr;
-        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
-            LOGI("PadV2Creator: Pad tensor as INPUT in Pad");
-            supported_ = false;
-        }
         auto in_dtype = tensorMap.at(idx_in).dtype;
         auto const_dtype = scalarMap.at(idx_const_val).dtype;
         if ((in_dtype == slang::type::data_type::kINT8 ||
@@ -2498,6 +2506,24 @@ class PadV2Creator final : public OpCreator {
         auto p_pad = (int32_t*)tensorMap.at(idx_in_pad).data.data();
         uint32_t pad_length = tensorMap.at(idx_in_pad).data.size() / 4;
         std::vector<int32_t> pad(p_pad, p_pad + pad_length);
+
+        auto pad_attr = tensorMap.at(idx_in_pad).attr;
+        uint32_t rank = tensorMap.at(idx_in).shape.size();
+        if (pad_attr != slang::type::tensor_attr::kCONSTANT) {
+            LOGI("PadV2Creator: Cannot support pad tensor as INPUT in PadV2");
+            supported_ = false;
+        } else {
+            std::vector<uint32_t> front_size, back_size;
+            for (int i = 0; i < rank; ++i) {
+                front_size.push_back(*(p_pad + i * 2));
+                back_size.push_back(*(p_pad + i * 2 + 1));
+            }
+            if (front_size[0] != 0 || back_size[0] != 0) {
+                LOGI("PadV2Creator: Cannot support padding on highest dimension in PadV2");
+                supported_ = false;
+            }
+        }
+
 
         std::get<0>(signature.field_tuple) = op::pad_v2::Input(tensorMap.at(idx_in));
         std::get<1>(signature.field_tuple) = op::pad_v2::Output(tensorMap.at(idx_out));
@@ -4254,10 +4280,6 @@ class TileCreator final : public OpCreator {
                                        (int32_t*)p_multiples + multiples_length);
         std::reverse(multiples.begin(), multiples.end());
 
-        if (rank == 4 && multiples[1] == multiples[2] == 1) {
-            LOGI("TileCreator: Cannot support H & C dimension equal to 1");
-            supported_ = false;
-        }
         std::get<0>(signature.field_tuple) = op::tile::Input(tensorMap.at(idx_in));
         std::get<1>(signature.field_tuple) = op::tile::Output(tensorMap.at(idx_out));
         std::get<2>(signature.field_tuple) = op::tile::Multiples(multiples);
@@ -4292,6 +4314,11 @@ class TopKCreator final : public OpCreator {
         uint32_t idx_indices = outputs[1];
 
         auto in_shape = tensorMap.at(idx_in).shape;
+        // 8mq/8qxp hardware limit
+        if (in_shape == std::vector<uint32_t>{59, 157}) {
+            LOGI("TopKCreator: Cannot support shape {59, 157} because of hardware limit");
+            supported_ = false;
+        }
         auto non_axis_dimensions = 1;
         std::reverse(in_shape.begin(), in_shape.end());
         // default axis in timvx is 0
@@ -4301,6 +4328,7 @@ class TopKCreator final : public OpCreator {
             LOGI("TopKCreator: Cannot support cause of hardware memory limit");
             supported_ = false;
         }
+
         std::get<0>(signature.field_tuple) = op::topk::Input(tensorMap.at(idx_in));
         std::get<1>(signature.field_tuple) = op::topk::Output(tensorMap.at(idx_out));
         std::get<2>(signature.field_tuple) = op::topk::Indices(tensorMap.at(idx_indices));

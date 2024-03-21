@@ -64,6 +64,7 @@ class Compilation {
     ~Compilation();
     int finish();
     [[nodiscard]] bool isFinished() const { return finished_; }
+    [[nodiscard]] bool isBurst() const { return isBurst_; }
 
     [[nodiscard]] Model* getModel() { return model_; }
     [[nodiscard]] const Model* getModel() const { return model_; }
@@ -84,6 +85,7 @@ class Compilation {
     int setCaching(int fd, const uint8_t* token);
     int setCaching(const fs::path& cacheDir, const uint8_t* token);
 
+    void setBurst() { isBurst_ = true; }
     void setCompiledGraph(const std::shared_ptr<tim::vx::Graph>& compiledGraph) {
         vxGraph_ = compiledGraph;
     }
@@ -107,6 +109,7 @@ class Compilation {
     int cacheFd_ = -1;
 
     bool finished_ = false;
+    bool isBurst_ = false;
 };
 
 }  // namespace vsi::android::sl

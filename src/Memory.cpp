@@ -12,22 +12,6 @@
 
 namespace vsi::android::sl {
 
-MemoryMapping::~MemoryMapping() {
-    if (status_ != ANEURALNETWORKS_NO_ERROR) {
-        return;
-    }
-
-    if (std::holds_alternative<int>(context_)) {
-        int fd = std::get<int>(context_);
-        if (fd > 0) {
-            munmap(data_, size_);
-        }
-    } else if (std::holds_alternative<const AHardwareBuffer*>(context_)) {
-        const auto* ahwb = std::get<const AHardwareBuffer*>(context_);
-        AHardwareBuffer_unlock(const_cast<AHardwareBuffer*>(ahwb), nullptr);
-    }
-}
-
 int IMemory::copy(const IMemory* src, const IMemory* dst) {
     if (src == dst) {
         return ANEURALNETWORKS_NO_ERROR;
@@ -38,31 +22,21 @@ int IMemory::copy(const IMemory* src, const IMemory* dst) {
         return ANEURALNETWORKS_BAD_DATA;
     }
 
-    auto srcMapping = src->map();
-    auto dstMapping = dst->map();
-
-    if (srcMapping.getStatus() != ANEURALNETWORKS_NO_ERROR) {
-        LOGE("IMemory::copy failed to map src memory");
-        return srcMapping.getStatus();
-    }
-
-    if (dstMapping.getStatus() != ANEURALNETWORKS_NO_ERROR) {
-        LOGE("IMemory::copy failed to map dst memory");
-        return dstMapping.getStatus();
-    }
-
-    size_t srcSize = srcMapping.getSize();
-    size_t dstSize = dstMapping.getSize();
+    size_t srcSize = src->getSize();
+    size_t dstSize = dst->getSize();
     if (srcSize != dstSize) {
         LOGE("IMemory::copy src size (%zu) and dst size (%zu) not matched", srcSize, dstSize);
         return ANEURALNETWORKS_BAD_DATA;
     }
 
-    const void* srcData = srcMapping.getData();
-    void* dstData = dstMapping.getData();
+    const void* srcData = src->getData();
+    void* dstData = dst->getData();
     std::memcpy(dstData, srcData, srcSize);
 
     const_cast<IMemory*>(dst)->setInitialized(true);
+
+    const_cast<IMemory*>(src)->unmap();
+    const_cast<IMemory*>(dst)->unmap();
 
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -84,6 +58,7 @@ FdMemory* FdMemory::create(size_t size, int prot, int fd, size_t offset) {
 }
 
 FdMemory::~FdMemory() {
+    unmap();
     close(fd_);
 }
 
@@ -96,19 +71,31 @@ int FdMemory::validate(const Compilation* compilation, IOType ioType, uint32_t i
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-MemoryMapping FdMemory::map() const {
-    void* data = mmap(nullptr, size_, prot_, MAP_SHARED, fd_, static_cast<off_t>(offset_));
-    if (data == MAP_FAILED) {
-        LOGE("FdMemory::create failed to mmap fd: %s (%d)", strerror(errno), errno);
-        return MemoryMapping(ANEURALNETWORKS_BAD_DATA);
+int FdMemory::map() {
+    data_ = mmap(nullptr, size_, prot_, MAP_SHARED, fd_, static_cast<off_t>(offset_));
+    if (data_ == MAP_FAILED) {
+        LOGE("FdMemory::map failed to mmap fd %d: %s (%d)", fd_, strerror(errno), errno);
+        return ANEURALNETWORKS_BAD_DATA;
     }
 
-    return {data, size_, fd_};
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+void FdMemory::unmap() {
+    if (fd_ <= 0 || data_ == nullptr) {
+        return;
+    }
+    munmap(data_, size_);
+    data_ = nullptr;
 }
 
 AHardwareBufferMemory* AHardwareBufferMemory::create(const AHardwareBuffer* ahwb) {
     auto* memory = new AHardwareBufferMemory(ahwb);
     return memory;
+}
+
+AHardwareBufferMemory::~AHardwareBufferMemory() {
+    unmap();
 }
 
 size_t AHardwareBufferMemory::getSize() const {
@@ -146,27 +133,34 @@ int AHardwareBufferMemory::validate(const Compilation* compilation, IOType ioTyp
     return ANEURALNETWORKS_NO_ERROR;
 }
 
-MemoryMapping AHardwareBufferMemory::map() const {
+int AHardwareBufferMemory::map() {
     AHardwareBuffer_Desc desc;
     AHardwareBuffer_describe(ahwb_, &desc);
 
     if (desc.format != AHARDWAREBUFFER_FORMAT_BLOB) {
         LOGE("AHardwareBufferMemory::map unable to map non-blob AHardwareBuffer memory");
-        return MemoryMapping(ANEURALNETWORKS_BAD_DATA);
+        return ANEURALNETWORKS_BAD_DATA;
     }
     uint32_t size = desc.width;
 
     constexpr uint64_t kCpuUsageMask =
             AHARDWAREBUFFER_USAGE_CPU_READ_MASK | AHARDWAREBUFFER_USAGE_CPU_WRITE_MASK;
-    void* data = nullptr;
     int status = AHardwareBuffer_lock(const_cast<AHardwareBuffer*>(ahwb_),
-                                      desc.usage & kCpuUsageMask, -1, nullptr, &data);
+                                      desc.usage & kCpuUsageMask, -1, nullptr, &data_);
     if (status != 0) {
         LOGE("AHardwareBufferMemory::map cannot lock the AHardwareBuffer, error: %d", status);
-        return MemoryMapping(ANEURALNETWORKS_BAD_DATA);
+        return ANEURALNETWORKS_BAD_DATA;
     }
 
-    return {data, size, ahwb_};
+    return ANEURALNETWORKS_NO_ERROR;
+}
+
+void AHardwareBufferMemory::unmap() {
+    if (ahwb_ == nullptr || data_ == nullptr) {
+        return;
+    }
+    AHardwareBuffer_unlock(const_cast<AHardwareBuffer*>(ahwb_), nullptr);
+    data_ = nullptr;
 }
 
 DeviceMemory* DeviceMemory::create(const MemoryDesc* desc) {
@@ -282,10 +276,6 @@ int DeviceMemory::validate(const Compilation* compilation, IOType ioType, uint32
     }
 
     return ANEURALNETWORKS_NO_ERROR;
-}
-
-MemoryMapping DeviceMemory::map() const {
-    return {data_, size_, nullptr};
 }
 
 }  // namespace vsi::android::sl

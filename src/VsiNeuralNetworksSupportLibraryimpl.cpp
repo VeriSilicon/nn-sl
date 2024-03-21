@@ -164,7 +164,13 @@ int ANeuralNetworksModel_getSupportedOperationsForDevices(
 int ANeuralNetworksBurst_create(ANeuralNetworksCompilation* compilation,
                                 ANeuralNetworksBurst** burst) {
     LOGV(__func__);
+    if (!compilation || !burst) {
+        LOGE("%s passed a nullptr", __func__);
+        return ANEURALNETWORKS_UNEXPECTED_NULL;
+    }
 
+    auto* c = reinterpret_cast<Compilation*>(compilation);
+    c->setBurst();
     return ANEURALNETWORKS_NO_ERROR;
 }
 
@@ -270,6 +276,12 @@ int ANeuralNetworksMemory_createFromDesc(const ANeuralNetworksMemoryDesc* desc,
         return ANEURALNETWORKS_OP_FAILED;
     }
 
+    auto status = mem->map();
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("%s failed to map device memory", __func__);
+        return status;
+    }
+
     *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -289,6 +301,12 @@ int ANeuralNetworksMemory_createFromFd(size_t size, int prot, int fd, size_t off
         return ANEURALNETWORKS_BAD_DATA;
     }
 
+    auto status = mem->map();
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("%s failed to map fd memory", __func__);
+        return status;
+    }
+
     *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);
     return ANEURALNETWORKS_NO_ERROR;
 }
@@ -306,6 +324,12 @@ int ANeuralNetworksMemory_createFromAHardwareBuffer(const AHardwareBuffer* ahwb,
     if (mem == nullptr) {
         LOGE("%s failed to create memory from ahwb", __func__);
         return ANEURALNETWORKS_BAD_DATA;
+    }
+
+    auto status = mem->map();
+    if (status != ANEURALNETWORKS_NO_ERROR) {
+        LOGE("%s failed to map ahwb memory", __func__);
+        return status;
     }
 
     *memory = reinterpret_cast<ANeuralNetworksMemory*>(mem);

@@ -1,4 +1,4 @@
-#    Copyright (c) 2024 Vivante Corporation
+#    Copyright (c) 2021 Vivante Corporation
 #
 #    Permission is hereby granted, free of charge, to any person obtaining a
 #    copy of this software and associated documentation files (the "Software"),
@@ -54,6 +54,5 @@ else()
             "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
             "-DANDROID_ABI=${ANDROID_ABI}"
             "-DTIM_VX_DBG_ENABLE_TENSOR_HNDL=OFF"
-            "-DTIM_VX_ENABLE_TENSOR_CACHE=OFF"
     )
 endif()

@@ -1,0 +1,67 @@
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  performance-*,
+  portability-*,
+  readability-*,
+  modernize-*,
+  -modernize-loop-convert,
+  -modernize-use-trailing-return-type,
+  clang-analyzer-*,
+  misc-*,
+  google-*,
+
+HeaderFilterRegex: "(src/).*\\.(hpp|h)$"
+
+CheckOptions:
+  - key: readability-identifier-naming.NamespaceCase         
+    value: snake_case
+  - key: readability-identifier-naming.ClassCase           
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase           
+    value: CamelCase 
+  - key: readability-identifier-naming.EnumCase           
+    value: CamelCase 
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: "^(SL_)?ANeuralNetworks(.*)_(.*)$"
+  - key: readability-identifier-naming.VariableCase   
+    value: camelBack
+  - key: readability-identifier-naming.ClassMemberCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.ClassMethodCase  
+    value: camelBack
+  - key: readability-identifier-naming.EnumConstantCase 
+    value: UPPER_CASE
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: k
+  - key: readability-identifier-naming.MemberConstantCase  
+    value: CamelCase
+  - key: readability-identifier-naming.MemberConstantPrefix
+    value: k
+  - key: readability-identifier-naming.StaticConstantCase  
+    value: CamelCase
+  - key: readability-identifier-naming.StaticConstantPrefix
+    value: k
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: "^c|d|e|m|op|fd|it$"
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: "^c|d|e|m|op|fd|it$"
+  - key: readability-function-cognitive-complexity.IgnoreMacros
+    value: true
+
+FormatStyle: file

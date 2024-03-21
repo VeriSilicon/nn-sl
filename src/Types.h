@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2024 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -28,8 +28,12 @@
 #include <android/NeuralNetworksTypes.h>
 
 #include <chrono>
+#include <unordered_map>
 #include <vector>
 
+#include "tim/vx/context.h"
+#include "tim/vx/graph.h"
+#include "tim/vx/operation.h"
 #include "tim/vx/tensor.h"
 #include "tim/vx/types.h"
 
@@ -42,6 +46,12 @@ using Duration = std::chrono::nanoseconds;
 using TimePoint = std::chrono::time_point<Clock, Duration>;
 
 enum class IOType { NONE, INPUT, OUTPUT };
+
+using VxContext = std::shared_ptr<tim::vx::Context>;
+using VxGraph = std::shared_ptr<tim::vx::Graph>;
+using VxTensor = std::shared_ptr<tim::vx::Tensor>;
+using VxOp = std::shared_ptr<tim::vx::Operation>;
+using VxTensorMap = std::unordered_map<uint32_t, VxTensor>;
 
 /**
  * Operand types.

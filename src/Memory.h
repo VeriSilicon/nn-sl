@@ -36,39 +36,19 @@
 
 namespace vsi::android::sl {
 
-struct MemoryMapping {
-   public:
-    using Context = std::variant<int, const AHardwareBuffer*, nullptr_t>;
-
-    explicit MemoryMapping(int status) : status_(status), data_(nullptr), size_(0) {}
-    MemoryMapping(void* data, size_t size, Context context)
-        : status_(ANEURALNETWORKS_NO_ERROR), data_(data), size_(size), context_(context) {}
-
-    MemoryMapping(const MemoryMapping&) = delete;
-    MemoryMapping& operator=(const MemoryMapping&) = delete;
-
-    ~MemoryMapping();
-
-    [[nodiscard]] int getStatus() const { return status_; }
-    [[nodiscard]] void* getData() const { return data_; }
-    [[nodiscard]] size_t getSize() const { return size_; }
-
-   private:
-    int status_;
-    void* data_;
-    size_t size_;
-    Context context_;
-};
-
 class IMemory {
    public:
     virtual ~IMemory() = default;
 
-    [[nodiscard]] virtual size_t getSize() const = 0;
     [[nodiscard]] virtual int validate(const Compilation* compilation, IOType ioType,
                                        uint32_t index, const ANeuralNetworksOperandType* type,
                                        size_t offset, size_t length) const = 0;
-    [[nodiscard]] virtual MemoryMapping map() const = 0;
+
+    [[nodiscard]] virtual void* getData() const = 0;
+    [[nodiscard]] virtual size_t getSize() const = 0;
+
+    [[nodiscard]] virtual int map() = 0;
+    virtual void unmap() = 0;
 
     [[nodiscard]] virtual bool isInitialized() const = 0;
     virtual void setInitialized(bool initialized) = 0;
@@ -83,17 +63,23 @@ class FdMemory final : public IMemory {
     ~FdMemory() override;
     static FdMemory* create(size_t size, int prot, int fd, size_t offset);
 
-    [[nodiscard]] size_t getSize() const override { return size_; }
     [[nodiscard]] int validate(const Compilation* compilation, IOType ioType, uint32_t index,
                                const ANeuralNetworksOperandType* type, size_t offset,
                                size_t length) const override;
-    [[nodiscard]] MemoryMapping map() const override;
+
+    [[nodiscard]] void* getData() const override { return data_; }
+    [[nodiscard]] size_t getSize() const override { return size_; }
+
+    [[nodiscard]] int map() override;
+    void unmap() override;
+
     [[nodiscard]] bool isInitialized() const override { return fd_ != -1; }
     void setInitialized(bool initialized) override {}
 
    private:
     int fd_ = -1;
     int prot_ = 0;
+    void* data_ = nullptr;
     size_t size_ = 0;
     size_t offset_ = 0;
 };
@@ -101,19 +87,25 @@ class FdMemory final : public IMemory {
 class AHardwareBufferMemory final : public IMemory {
    public:
     explicit AHardwareBufferMemory(const AHardwareBuffer* ahwb) : ahwb_(ahwb) {}
-    ~AHardwareBufferMemory() override = default;
+    ~AHardwareBufferMemory() override;
     static AHardwareBufferMemory* create(const AHardwareBuffer* ahwb);
 
-    [[nodiscard]] size_t getSize() const override;
     [[nodiscard]] int validate(const Compilation* compilation, IOType ioType, uint32_t index,
                                const ANeuralNetworksOperandType* type, size_t offset,
                                size_t length) const override;
-    [[nodiscard]] MemoryMapping map() const override;
+
+    [[nodiscard]] void* getData() const override { return data_; }
+    [[nodiscard]] size_t getSize() const override;
+
+    [[nodiscard]] int map() override;
+    void unmap() override;
+
     [[nodiscard]] bool isInitialized() const override { return ahwb_ != nullptr; }
     void setInitialized(bool initialized) override {}
 
    private:
-    const AHardwareBuffer* ahwb_;
+    void* data_ = nullptr;
+    const AHardwareBuffer* ahwb_ = nullptr;
 };
 
 class DeviceMemory final : public IMemory {
@@ -129,11 +121,18 @@ class DeviceMemory final : public IMemory {
     ~DeviceMemory() override;
     static DeviceMemory* create(const MemoryDesc* desc);
 
-    [[nodiscard]] size_t getSize() const override { return size_; }
     [[nodiscard]] int validate(const Compilation* compilation, IOType ioType, uint32_t index,
                                const ANeuralNetworksOperandType* type, size_t offset,
                                size_t length) const override;
-    [[nodiscard]] MemoryMapping map() const override;
+
+    [[nodiscard]] void* getData() const override { return data_; }
+    [[nodiscard]] size_t getSize() const override { return size_; }
+
+    [[nodiscard]] int map() override {
+        return data_ != nullptr ? ANEURALNETWORKS_NO_ERROR : ANEURALNETWORKS_BAD_STATE;
+    };
+    void unmap() override{};
+
     [[nodiscard]] bool isInitialized() const override { return initialized_; }
     void setInitialized(bool initialized) override { initialized_ = initialized; }
 
@@ -142,8 +141,8 @@ class DeviceMemory final : public IMemory {
     slang::type::tensor_storage tensorOperand_;
     std::vector<uint32_t> shape_;
 
-    void* data_;
-    size_t size_;
+    void* data_ = nullptr;
+    size_t size_ = 0;
     bool initialized_ = false;
 };
 

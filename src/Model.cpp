@@ -57,6 +57,13 @@ int Model::addOperand(const ANeuralNetworksOperandType& type) {
                 .zero_point = type.zeroPoint,
         };
         tensors_.insert({numOperands_, tensor});
+
+        bool hasDynamicAxis = std::any_of(shape.cbegin(), shape.cend(),
+                                          [](uint32_t s) { return s == 0; });
+        if (hasDynamicAxis) {
+            LOGW("Model::addOperand operand:%u has dynamic axis which is not supported", numOperands_);
+            // return ANEURALNETWORKS_OP_FAILED;
+        }
     } else if (operandType == OperandType::FLOAT32 || operandType == OperandType::FLOAT16 ||
                operandType == OperandType::INT32 || operandType == OperandType::UINT32 ||
                operandType == OperandType::BOOL) {
@@ -175,13 +182,13 @@ int Model::setOperandValueFromMemory(int32_t index, const IMemory* memory, size_
     }
 
     if (length <= ANEURALNETWORKS_MAX_SIZE_OF_IMMEDIATELY_COPIED_VALUES) {
-        auto mapping = memory->map();
-        if (mapping.getStatus() != ANEURALNETWORKS_NO_ERROR) {
+        int status = const_cast<IMemory*>(memory)->map();
+        if (status != ANEURALNETWORKS_NO_ERROR) {
             LOGE("Model::setOperandValueFromMemory failed to map memory");
-            return mapping.getStatus();
+            return status;
         }
 
-        const uint8_t* data = reinterpret_cast<uint8_t*>(mapping.getData()) + offset;
+        const uint8_t* data = reinterpret_cast<uint8_t*>(memory->getData()) + offset;
 
         if (auto it = tensors_.find(index); it != tensors_.end()) {
             auto& [_, tensor] = *it;
@@ -192,6 +199,8 @@ int Model::setOperandValueFromMemory(int32_t index, const IMemory* memory, size_
             auto& [_, scalar] = *it;
             scalar.data.assign(data, data + length);
         }
+
+        const_cast<IMemory*>(memory)->unmap();
     }
 
     operandValueInfos_[index] = {
