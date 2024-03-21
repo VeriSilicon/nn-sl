@@ -33,6 +33,8 @@ enum class data_type {
   kINT4,
   kUINT4,
 
+  kMODELVALUE,
+
   kCNT,
   kINVALID = kCNT
 };
@@ -256,8 +258,7 @@ struct tensor_storage {
   std::vector<float> per_channel_scales{};
   std::vector<int32_t> per_channel_zero_points{};
   uint32_t channel_dim;
-  const void* data{nullptr};
-  uint32_t data_length{0};
+  std::vector<uint8_t> data;
 };
 
 struct scalar_storage {
@@ -266,6 +267,14 @@ struct scalar_storage {
 
   // rule check required
   std::vector<uint8_t> data;
+};
+
+struct model_value_storage {
+  // signature match required
+  data_type dtype;
+
+  // rule check required
+  const void* data{nullptr};
 };
 
 template <typename T>
@@ -331,7 +340,6 @@ struct tensor_field : public field<R, tensor_tag, M, tensor_storage> {
     this->storage.per_channel_zero_points = storage.per_channel_zero_points;
     this->storage.channel_dim = storage.channel_dim;
     this->storage.data = storage.data;
-    this->storage.data_length = storage.data_length;
   }
 
   tensor_field(data_type d, quant_type q, tensor_attr a = tensor_attr::kVARIABLE) {
@@ -342,9 +350,9 @@ struct tensor_field : public field<R, tensor_tag, M, tensor_storage> {
 
   std::vector<uint32_t>& shape() { return this->storage.shape; }
 
-  const void* data() { return this->storage.data; }
+  const void* data() { return this->storage.data.data(); }
 
-  uint32_t data_length() { return this->storage.data_length; }
+  size_t data_length() { return this->storage.data.size(); }
 
   float& scale() { return this->storage.scale; }
 

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *    Copyright (c) 2024 Vivante Corporation
+ *    Copyright (c) 2022 Vivante Corporation
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a
  *    copy of this software and associated documentation files (the "Software"),
@@ -83,16 +83,11 @@ class Execution {
         const IMemory* memory;
     };
 
-    using VxContext = std::shared_ptr<tim::vx::Context>;
-    using VxGraph = std::shared_ptr<tim::vx::Graph>;
-    using VxTensor = std::shared_ptr<tim::vx::Tensor>;
-    using VxOp = std::shared_ptr<tim::vx::Operation>;
-    using VxTensorMap = std::unordered_map<uint32_t, VxTensor>;
-
     VxTensor createVxConstantTensor(const slang::type::tensor_storage& tensor,
                                     Model::OperandValueInfo valueInfo);
     VxTensor createVxIOTensor(const slang::type::tensor_storage& tensor,
                               tim::vx::TensorAttribute attr);
+    VxTensor createTransientTensor(const slang::type::tensor_storage& tensor);
     int mapOperations(const std::vector<std::shared_ptr<OpCreator>>& opCreators,
                       const TensorMap& tensorMap, const ScalarMap& scalarMap);
     int compile();
@@ -115,6 +110,7 @@ class Execution {
     Duration timeoutDuration_;
     Duration loopTimeoutDuration_;
 
+    bool relaxed_;
     bool reusable_;
     bool measure_;
     State state_;

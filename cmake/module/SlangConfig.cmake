@@ -2,7 +2,7 @@
 # VSI already packed slang library properly inside of android.sl
 set( repo_addr git@gitlab-cn.verisilicon.com:ipd_vip_vosp/slang.git)
 if(INTERNAL_BUILD)
-    set(repo_addr https://gitlab-cn.verisilicon.com/ipd_vip_vosp_ro/slang.git)
+    set(repo_addr git@gitlab-cn.verisilicon.com:ipd_vip_vosp_ro/slang.git)
 endif()
 
 if(NOT SLANG_TARGET_PID)
