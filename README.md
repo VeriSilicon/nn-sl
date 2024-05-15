@@ -2,14 +2,25 @@
 
 ## 1 How to build
 
+with prebuild sdk is not recommend, just for build test.
+
 ```sh
 cmake -B <build_dir> -S <SL_dir> -DCMAKE_TOOLCHAIN_FILE=<ndk_root>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34
 
 cd <build_dir>
 make tim-vx VsiSupportLibrary
 ```
+### Build with specific OpenVX driver (recommended)
+
+add cmake definition -DEXT_VIV_SDK=PATH_OPENVX_SDK where OPENVX_SDK is the OpenVX driver libraries built from source in AOSP. Usually, SoC vendor is the responsible for updating this SDK.
+
+The OPENVX_SDK directory should originized as in prebuild/android_arm64/
 
 Reference for cmake variable in android toolchain: <https://developer.android.com/ndk/guides/cmake>
+
+### Build with specific TIM-VX version
+
+Addition cmake definition added for this purpose -DTIM_VX_TAG=commit-sha-id, just provide the commit id in TIM-VX github repo.
 
 ## 2 Integrate with Android
 
