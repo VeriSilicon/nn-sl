@@ -6,6 +6,7 @@ option(SL_DIST_BUILD "Build from distributed package"   ON)
 option(PUBLIC_TIM_VX "Download TIM_VX from github"      ON)
 option(USE_GRPC      "Use gRPC support, work with NBG"  OFF)
 option(INTERNAL_BUILD "build with internal resource"  OFF)
+option(ENABLE_TENSOR_HANLE "Enable create tensor form user memory" ON)
 
 if(${RUN_NBG})
   add_definitions(-DRUN_NBG)
@@ -19,6 +20,25 @@ if(${CMAKE_BUILD_TYPE})
   message(STATUS "Setting build type to Release, for debug builds use"
     "'-DCMAKE_BUILD_TYPE=Debug'.")
   set(CMAKE_BUILD_TYPE "Release")
+endif()
+
+# Choose target architecture with:
+# -DANDROID_ABI={armeabi-v7a,arm64-v8a}
+if(NOT ANDROID_ABI)
+    message(WARNING "ANDROID_ABI is not provided - will use armeabi-v7a as default since it is more general for all people")
+
+    set(ANDROID_ABI "armeabi-v7a")
+endif()
+
+if(${ANDROID_ABI} STREQUAL "arm64-v8a")
+  set(LIBABI "lib64")
+elseif(${ANDROID_ABI} STREQUAL "armeabi-v7a")
+  set(LIBABI "lib")
+endif()
+
+if(NOT EXT_VIV_SDK)
+    message(WARNING "EXT_VIV_SDK should point to the sdk directory of OpenVX driver Android prebuild; will use ${CMAKE_SOURCE_DIR}/prebuilt/android_arm64 as default sdk. If make failed at link stage, please make sure sdk is abi-compatible with current build")
+    set(EXT_VIV_SDK ${CMAKE_SOURCE_DIR}/prebuilt/android_arm64)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/module")
@@ -54,14 +74,16 @@ set(SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Utils.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/MapOperation.cpp
 )
-set(DEPENDENCIES ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/lib/libtim-vx.so)
+set(DEPENDENCIES ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/${LIBABI}/lib/libtim-vx.so)
+
 add_library(VsiSupportLibrary SHARED ${SRC})
 target_link_libraries(VsiSupportLibrary ${DEPENDENCIES} nativewindow log)
 target_include_directories(VsiSupportLibrary
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/deps/include
-        ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/include
+        ${CMAKE_CURRENT_BINARY_DIR}/tim-vx-install/${LIBABI}/include
     )
+set(LIBRARY_OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/support-lib-install/${LIBABI}")
 
 ##############################################################################
 # package setup
