@@ -6,7 +6,7 @@ option(SL_DIST_BUILD "Build from distributed package"   ON)
 option(PUBLIC_TIM_VX "Download TIM_VX from github"      ON)
 option(USE_GRPC      "Use gRPC support, work with NBG"  OFF)
 option(INTERNAL_BUILD "build with internal resource"  OFF)
-option(ENABLE_TENSOR_HANLE "Enable create tensor form user memory" ON)
+option(ENABLE_TENSOR_HANDLE "Enable create tensor form user memory" ON)
 
 if(${RUN_NBG})
   add_definitions(-DRUN_NBG)
