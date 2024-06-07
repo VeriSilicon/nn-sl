@@ -23,6 +23,10 @@ if(NOT PUBLIC_TIM_VX)
     set(repo_addr git@gitlab-cn.verisilicon.com:npu_sw/verisilicon/tim-vx.git)
 endif()
 
+if(EXT_TIM_VX)
+    set(repo_addr ${EXT_TIM_VX})
+endif()
+
 if(NOT TIM_VX_TAG)
 set(TIM_VX_TAG "main")
 endif()
