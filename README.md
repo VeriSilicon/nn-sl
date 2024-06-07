@@ -18,6 +18,10 @@ The OPENVX_SDK directory should originized as in prebuild/android_arm64/
 
 Reference for cmake variable in android toolchain: <https://developer.android.com/ndk/guides/cmake>
 
+### Build with specific TIM-VX remote
+
+Addition cmake definition added for this purpose -DEXT_TIM_VX=<git remote location url>, just provide the git remote location url to get TIM-VX code.
+
 ### Build with specific TIM-VX version
 
 Addition cmake definition added for this purpose -DTIM_VX_TAG=commit-sha-id, just provide the commit id in TIM-VX github repo.
