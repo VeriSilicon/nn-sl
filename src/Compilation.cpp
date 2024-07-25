@@ -83,24 +83,11 @@ int Compilation::setCaching(const fs::path& cacheDir, const uint8_t* token) {
     }
 
     fs::path cacheFile = cacheDir / filename;
-    int fd = open(cacheFile.c_str(), O_CREAT | O_EXCL | O_RDWR, 0);
+    int fd = open(cacheFile.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
     if (fd == -1) {
-        if (errno == EEXIST) {
-            // The file exists, delete it and try again.
-            if (unlink(cacheFile.c_str()) == -1) {
-                // No point in retrying if the unlink failed.
-                LOGE("Compilation::setCaching error unlinking cache file %s: %s (%d)",
-                     cacheFile.c_str(), strerror(errno), errno);
-                return ANEURALNETWORKS_BAD_DATA;
-            }
-            // Retry now that we've unlinked the file.
-            fd = open(cacheFile.c_str(), O_CREAT | O_EXCL | O_RDWR, 0);
-        }
-        if (fd == -1) {
-            LOGE("Compilation::setCaching error creating cache file %s: %s (%d)", cacheFile.c_str(),
-                 strerror(errno), errno);
-            return ANEURALNETWORKS_BAD_DATA;
-        }
+        LOGE("Compilation::setCaching error creating cache file %s: %s (%d)", cacheFile.c_str(),
+            strerror(errno), errno);
+        return ANEURALNETWORKS_BAD_DATA;
     }
 
     return Compilation::setCaching(fd, token);
