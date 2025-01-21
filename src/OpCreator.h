@@ -2621,7 +2621,7 @@ class PreluCreator final : public OpCreator {
         std::get<2>(signature.field_tuple) = op::prelu::Output(tensorMap.at(idx_out));
     }
 
-    bool checkSupported() override { return slang::functional::check_signature(signature); }
+    bool checkSupported() override { return false;}
     std::shared_ptr<tim::vx::Operation> Lowering(std::shared_ptr<tim::vx::Graph> graph) override {
         return graph->CreateOperation<tim::vx::ops::Prelu>(0);
     }
